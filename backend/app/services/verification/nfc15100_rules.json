@@ -1,0 +1,352 @@
+{
+  "version": "1.0",
+  "norme": "NF C 15-100:2010 + Amendements 1 (2013) et 2 (2015)",
+  "description": "Règles de vérification NF C 15-100 appliquées par le NormChecker. Chaque règle est vérifiable depuis les données CANECO BT. Les règles marquées requires_validation:true nécessitent une revue par un ingénieur métier avant mise en production.",
+  "rules": [
+    {
+      "id": "NFC-001",
+      "name": "Section minimale — circuit éclairage",
+      "source": "NF C 15-100 Art. 529.1.1, tableau 52B",
+      "description": "Les conducteurs de phase des circuits d'éclairage doivent avoir une section minimale de 1,5 mm² en cuivre. En dessous de cette valeur, la résistance du conducteur est trop élevée et le risque d'échauffement est inacceptable pour des circuits allumés en continu.",
+      "check_type": "min_section_by_style",
+      "enabled": true,
+      "severity": "BLOQUANT",
+      "gap_code": "E-008",
+      "requires_validation": false,
+      "parameters": {
+        "style_keywords": ["eclairage", "ecl", "lum", "lgt", "lighting", "cl", "illumination"],
+        "min_section_mm2": 1.5,
+        "material": "Cu"
+      }
+    },
+    {
+      "id": "NFC-002",
+      "name": "Section minimale — prise de courant ≤ 20 A",
+      "source": "NF C 15-100 Art. 529.1.1, tableau 52B",
+      "description": "Les conducteurs de phase des circuits de prises de courant de calibre ≤ 20 A doivent avoir une section minimale de 1,5 mm² en cuivre. Cette section garantit la tenue thermique en cas de surcharge prolongée.",
+      "check_type": "min_section_by_calibre",
+      "enabled": true,
+      "severity": "BLOQUANT",
+      "gap_code": "E-008",
+      "requires_validation": false,
+      "parameters": {
+        "style_keywords": ["prise", "pc", "prsc", "socket", "pdc"],
+        "calibre_max_a": 20,
+        "min_section_mm2": 1.5,
+        "material": "Cu"
+      }
+    },
+    {
+      "id": "NFC-003",
+      "name": "Section minimale — prise de courant 20–32 A",
+      "source": "NF C 15-100 Art. 529.1.1, tableau 52B",
+      "description": "Les conducteurs de phase des circuits de prises de courant de calibre supérieur à 20 A et inférieur ou égal à 32 A doivent avoir une section minimale de 2,5 mm² en cuivre.",
+      "check_type": "min_section_by_calibre",
+      "enabled": true,
+      "severity": "BLOQUANT",
+      "gap_code": "E-008",
+      "requires_validation": false,
+      "parameters": {
+        "style_keywords": ["prise", "pc", "prsc", "socket", "pdc"],
+        "calibre_min_a": 20,
+        "calibre_max_a": 32,
+        "min_section_mm2": 2.5,
+        "material": "Cu"
+      }
+    },
+    {
+      "id": "NFC-004",
+      "name": "Section minimale — circuit chauffage / chauffe-eau",
+      "source": "NF C 15-100 Art. 529.1.1",
+      "description": "Les circuits alimentant des appareils de chauffage électrique ou des chauffe-eau doivent avoir une section minimale de 2,5 mm² pour supporter le courant en service continu sans échauffement excessif.",
+      "check_type": "min_section_by_style",
+      "enabled": true,
+      "severity": "BLOQUANT",
+      "gap_code": "E-008",
+      "requires_validation": false,
+      "parameters": {
+        "style_keywords": ["chauffage", "chf", "chauffe", "radiateur", "heating", "cta", "vmc"],
+        "min_section_mm2": 2.5,
+        "material": "Cu"
+      }
+    },
+    {
+      "id": "NFC-005",
+      "name": "Section conducteur PE — règle 16 mm² / phase/2",
+      "source": "NF C 15-100 Art. 543.1, tableau 54F",
+      "description": "La section du conducteur de protection PE est déterminée par : PE = phase si phase ≤ 16 mm² ; PE = 16 mm² si 16 < phase ≤ 35 mm² ; PE = phase/2 si phase > 35 mm². Cette règle garantit la tenue aux courants de défaut.",
+      "check_type": "pe_section",
+      "enabled": true,
+      "severity": "BLOQUANT",
+      "gap_code": "E-008",
+      "requires_validation": false,
+      "parameters": {
+        "rules": [
+          {"phase_max_mm2": 16, "pe_equals_phase": true},
+          {"phase_min_mm2": 16, "phase_max_mm2": 35, "pe_min_mm2": 16},
+          {"phase_min_mm2": 35, "pe_ratio": 0.5}
+        ]
+      }
+    },
+    {
+      "id": "NFC-006",
+      "name": "Section neutre — égale à la phase (circuits monophasés)",
+      "source": "NF C 15-100 Art. 524.2",
+      "description": "Pour les circuits monophasés, la section du conducteur neutre doit être égale à la section du conducteur de phase. Réduire le neutre en monophasé crée un déséquilibre thermique et un risque de surtension.",
+      "check_type": "neutral_section_monophase",
+      "enabled": true,
+      "severity": "BLOQUANT",
+      "gap_code": "E-008",
+      "requires_validation": false,
+      "parameters": {
+        "phase_count": 1
+      }
+    },
+    {
+      "id": "NFC-007",
+      "name": "Section neutre — circuits triphasés avec harmoniques rang 3",
+      "source": "NF C 15-100 Art. 524.3, IEC 60364-5-52",
+      "description": "Pour les circuits triphasés alimentant des charges non-linéaires (informatique, variateurs de vitesse, onduleurs), les harmoniques de rang 3 se cumulent dans le neutre. La section du neutre doit être au moins égale à la section de phase.",
+      "check_type": "neutral_section_triphase_harmonic",
+      "enabled": true,
+      "severity": "A_CORRIGER",
+      "gap_code": "E-005",
+      "requires_validation": true,
+      "parameters": {
+        "style_keywords_nonlinear": ["info", "informatique", "data", "variateur", "vfd", "onduleur", "ups", "chargeur", "baie", "serveur"],
+        "min_neutral_ratio": 1.0
+      }
+    },
+    {
+      "id": "NFC-008",
+      "name": "IB ≤ In (calibre) — protection non sous-calibrée",
+      "source": "NF C 15-100 Art. 533.2.1",
+      "description": "Le courant nominal de la protection In (calibre du disjoncteur) doit être supérieur ou égal au courant d'emploi IB du circuit. Une protection sous-calibrée déclenchera intempestivement en service normal.",
+      "check_type": "calibre_vs_ib",
+      "enabled": true,
+      "severity": "BLOQUANT",
+      "gap_code": "E-004",
+      "requires_validation": false,
+      "parameters": {
+        "allow_ratio_min": 1.0
+      }
+    },
+    {
+      "id": "NFC-009",
+      "name": "Chute de tension max — circuits éclairage ≤ 3 %",
+      "source": "NF C 15-100 Art. 525, tableau 52B (réseau BT public)",
+      "description": "La chute de tension entre l'origine de l'installation et tout point d'utilisation ne doit pas dépasser 3 % pour les circuits d'éclairage. Au-delà, le flux lumineux est insuffisant et les lampes peuvent scintiller.",
+      "check_type": "voltage_drop_by_style",
+      "enabled": true,
+      "severity": "BLOQUANT",
+      "gap_code": "E-009",
+      "requires_validation": false,
+      "parameters": {
+        "style_keywords": ["eclairage", "ecl", "lum", "lgt", "lighting"],
+        "max_voltage_drop_pct": 3.0
+      }
+    },
+    {
+      "id": "NFC-010",
+      "name": "Chute de tension max — autres usages ≤ 5 %",
+      "source": "NF C 15-100 Art. 525, tableau 52B (réseau BT public)",
+      "description": "La chute de tension entre l'origine de l'installation et tout point d'utilisation ne doit pas dépasser 5 % pour les circuits de force motrice, de chauffage et autres usages.",
+      "check_type": "voltage_drop_by_style",
+      "enabled": true,
+      "severity": "BLOQUANT",
+      "gap_code": "E-009",
+      "requires_validation": false,
+      "parameters": {
+        "style_keywords_excluded": ["eclairage", "ecl", "lum", "lgt", "lighting"],
+        "max_voltage_drop_pct": 5.0
+      }
+    },
+    {
+      "id": "NFC-011",
+      "name": "Icu ≥ Icc présumé — pouvoir de coupure suffisant",
+      "source": "NF C 15-100 Art. 532.5, IEC 60898",
+      "description": "Le pouvoir de coupure ultime Icu du disjoncteur doit être supérieur ou égal au courant de court-circuit présumé au point d'installation. Un Icu insuffisant peut provoquer l'explosion du disjoncteur lors d'un court-circuit.",
+      "check_type": "icu_vs_icc_presumed",
+      "enabled": true,
+      "severity": "BLOQUANT",
+      "gap_code": "E-008",
+      "requires_validation": true,
+      "parameters": {
+        "default_icc_presumed_ka": 6.0,
+        "note": "Le Icc présumé n'est pas toujours exporté par CANECO. Valeur par défaut 6 kA utilisée si absente. Vérification manuelle recommandée pour les tableaux proches du TGBT."
+      }
+    },
+    {
+      "id": "NFC-012",
+      "name": "Différentiel 30 mA — prises ≤ 32 A (habitation)",
+      "source": "NF C 15-100 Art. 531.3.1",
+      "description": "Dans les installations résidentielles, tous les circuits alimentant des prises de courant de calibre ≤ 32 A doivent être protégés par un DDR de sensibilité 30 mA.",
+      "check_type": "ddr_required_by_style",
+      "enabled": true,
+      "severity": "BLOQUANT",
+      "gap_code": "E-007",
+      "requires_validation": true,
+      "parameters": {
+        "style_keywords": ["prise", "pc", "prsc", "socket"],
+        "calibre_max_a": 32,
+        "required_ddr_sensitivity_ma": 30,
+        "context": "habitation"
+      }
+    },
+    {
+      "id": "NFC-013",
+      "name": "Différentiel 30 mA — locaux contenant douche ou baignoire",
+      "source": "NF C 15-100 Art. 701.412.1, 701.531.2",
+      "description": "Dans les locaux contenant une baignoire ou une douche, tous les circuits doivent être protégés par un DDR 30 mA, quel que soit leur usage. La présence d'eau augmente fortement le risque d'électrocution.",
+      "check_type": "ddr_required_by_location",
+      "enabled": true,
+      "severity": "BLOQUANT",
+      "gap_code": "E-007",
+      "requires_validation": true,
+      "parameters": {
+        "location_keywords": ["sdb", "salle de bain", "douche", "bain", "wet", "salle eau", "sanitaire"],
+        "required_ddr_sensitivity_ma": 30
+      }
+    },
+    {
+      "id": "NFC-014",
+      "name": "Sélectivité ampéremétrique amont/aval",
+      "source": "NF C 15-100 Art. 536.1, guide UTE C 15-105",
+      "description": "Pour une sélectivité ampéremétrique entre deux disjoncteurs en série, le courant de déclenchement magnétique du disjoncteur amont (IrMg × In_amont) doit être supérieur d'au moins 50 % à celui de l'aval (IrMg × In_aval). Sinon les deux disjoncteurs déclenchent simultanément.",
+      "check_type": "selectivity_ratio",
+      "enabled": true,
+      "severity": "A_CORRIGER",
+      "gap_code": "E-004",
+      "requires_validation": true,
+      "parameters": {
+        "min_ratio_imag_amont_aval": 1.5,
+        "note": "Nécessite la connaissance de la hiérarchie des tableaux (TGBT → TD → TDS). Vérification croisée entre départs du même tableau et leur tableau amont."
+      }
+    },
+    {
+      "id": "NFC-015",
+      "name": "Courbe B recommandée — circuits éclairage et câbles longs",
+      "source": "NF C 15-100 Art. 533.1, IEC 60898-1",
+      "description": "La courbe B (seuil magnétique 3 à 5 × In) est recommandée pour les circuits d'éclairage et les circuits de grande longueur où le courant de court-circuit en bout de câble peut être faible. La courbe C peut provoquer des non-déclenchements magnétiques.",
+      "check_type": "tripping_curve_check",
+      "enabled": true,
+      "severity": "A_SIGNALER",
+      "gap_code": "E-010",
+      "requires_validation": true,
+      "parameters": {
+        "style_keywords": ["eclairage", "ecl", "lum"],
+        "recommended_curve": "B",
+        "ir_mg_in_range_ok": [3.0, 5.0],
+        "ir_mg_in_range_warning": [5.0, 10.0]
+      }
+    },
+    {
+      "id": "NFC-016",
+      "name": "Courbe D recommandée — moteurs et charges à fort courant d'appel",
+      "source": "NF C 15-100 Art. 533.1, IEC 60898-1",
+      "description": "La courbe D (seuil magnétique 10 à 20 × In) est recommandée pour les circuits alimentant des moteurs à démarrage direct, des transformateurs ou des résistances à froid. La courbe C peut provoquer des déclenchements intempestifs au démarrage.",
+      "check_type": "tripping_curve_check",
+      "enabled": true,
+      "severity": "A_SIGNALER",
+      "gap_code": "E-010",
+      "requires_validation": true,
+      "parameters": {
+        "style_keywords": ["moteur", "mot", "motor", "transformateur", "transfo", "compresseur", "pompe"],
+        "recommended_curve": "D",
+        "ir_mg_in_range_ok": [10.0, 20.0],
+        "ir_mg_in_range_warning": [5.0, 10.0]
+      }
+    },
+    {
+      "id": "NFC-017",
+      "name": "Section minimale — conducteur aluminium ≥ 16 mm²",
+      "source": "NF C 15-100 Art. 526.1",
+      "description": "Les conducteurs en aluminium ne peuvent être utilisés en dessous de 16 mm² dans les installations fixes. En dessous de cette section, la fragilité mécanique et l'oxydation des connexions présentent des risques inacceptables.",
+      "check_type": "min_section_by_material",
+      "enabled": true,
+      "severity": "BLOQUANT",
+      "gap_code": "E-008",
+      "requires_validation": false,
+      "parameters": {
+        "material_keyword": "Al",
+        "min_section_mm2": 16
+      }
+    },
+    {
+      "id": "NFC-018",
+      "name": "DDR type A — charges non-linéaires (variateurs, chargeurs VE)",
+      "source": "NF C 15-100 Art. 531.3.4, IEC 62423",
+      "description": "Les circuits alimentant des charges non-linéaires (variateurs de vitesse, chargeurs de véhicules électriques, onduleurs, équipements informatiques) doivent utiliser des DDR de type A (sensibles aux courants sinusoïdaux et pulsés redressés) plutôt que type AC.",
+      "check_type": "ddr_type_by_load",
+      "enabled": true,
+      "severity": "A_CORRIGER",
+      "gap_code": "E-005",
+      "requires_validation": true,
+      "parameters": {
+        "style_keywords_nonlinear": ["variateur", "vfd", "onduleur", "ups", "chargeur", "ev", "ve", "borne recharge", "vrd"],
+        "required_ddr_type": "A",
+        "note": "Identifier le type DDR depuis le champ bloc_differentiel de CANECO."
+      }
+    },
+    {
+      "id": "NFC-019",
+      "name": "Parafoudre obligatoire — maisons individuelles (amendement 2013)",
+      "source": "NF C 15-100 Amendement 1 (2013) Art. 534.2.3",
+      "description": "Depuis l'amendement 1 de janvier 2013, l'installation d'un parafoudre est obligatoire dans les maisons individuelles neuves ou rénovées. Il protège les équipements électroniques contre les surtensions d'origine atmosphérique.",
+      "check_type": "surge_protection_required",
+      "enabled": true,
+      "severity": "A_SIGNALER",
+      "gap_code": "E-010",
+      "requires_validation": true,
+      "parameters": {
+        "applicable_types": ["habitation", "maison", "villa", "pavillon", "logement"],
+        "note": "Vérifier le type d'installation dans le CPS. En tertiaire, le parafoudre est recommandé si alimentation par ligne aérienne."
+      }
+    },
+    {
+      "id": "NFC-020",
+      "name": "Chute de tension totale depuis source ≤ 8 % (tertiaire / industrie)",
+      "source": "NF C 15-100 Art. 525 note 1, guide UTE C 15-105",
+      "description": "Dans les installations tertiaires et industrielles alimentées depuis un réseau BT public, la chute de tension totale depuis le compteur jusqu'au point le plus défavorisé ne doit pas dépasser 8 % pour les circuits de force motrice.",
+      "check_type": "total_voltage_drop",
+      "enabled": true,
+      "severity": "A_CORRIGER",
+      "gap_code": "E-009",
+      "requires_validation": true,
+      "parameters": {
+        "max_total_voltage_drop_pct": 8.0,
+        "context": "tertiaire_industrie"
+      }
+    },
+    {
+      "id": "NFC-021",
+      "name": "Cohérence IrTh/IN — réglage thermique disjoncteur",
+      "source": "NF C 15-100 Art. 533.2, guide fabricant",
+      "description": "Le réglage thermique IrTh doit être compris entre IB et Iz (courant admissible du câble). Un IrTh supérieur à Iz ne protège pas le câble contre les surcharges prolongées.",
+      "check_type": "ir_th_vs_iz",
+      "enabled": true,
+      "severity": "BLOQUANT",
+      "gap_code": "E-004",
+      "requires_validation": true,
+      "parameters": {
+        "note": "Iz non disponible directement dans CANECO. À calculer depuis la section, le type de câble et le mode de pose. Vérification manuelle recommandée."
+      }
+    },
+    {
+      "id": "NFC-022",
+      "name": "Protection différentielle 300 mA — protection incendie tertiaire",
+      "source": "NF C 15-100 Art. 531.2.1, guide UTE C 15-103",
+      "description": "Dans les établissements recevant du public et les locaux tertiaires, un DDR de sensibilité 300 mA est acceptable pour la protection contre l'incendie en tête de tableau. Il détecte les courants de fuite avant qu'ils ne provoquent un échauffement dangereux.",
+      "check_type": "ddr_300ma_tertiaire",
+      "enabled": true,
+      "severity": "INFORMATION",
+      "gap_code": "E-010",
+      "requires_validation": true,
+      "parameters": {
+        "acceptable_ddr_sensitivity_ma": 300,
+        "context": "tertiaire_erp",
+        "note": "Un DDR 300 mA en tête ne dispense pas des DDR 30 mA sur les circuits prise et locaux humides."
+      }
+    }
+  ]
+}

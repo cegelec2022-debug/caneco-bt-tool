@@ -1,0 +1,241 @@
+{
+  "version": "1.0",
+  "description": "Heuristiques de bonnes pratiques émises par le SuggestionEngine. Toutes en criticité INFO, non bloquantes. Modifiables sans redéploiement. Le champ requires_validation:true signale les règles à faire valider par un ingénieur métier avant activation en production.",
+  "rules": [
+    {
+      "id": "SUG-001",
+      "name": "Surdimensionnement de section",
+      "source": "Bonne pratique métier — optimisation économique",
+      "description": "La section choisie est largement supérieure au minimum normatif pour le calibre de protection. Un surdimensionnement excessif augmente le coût du câble et des accessoires sans apport technique justifié. Vérifier si la section est imposée par le CPS ou par une contrainte de chute de tension.",
+      "check_type": "oversized_section",
+      "enabled": true,
+      "severity": "INFO",
+      "gap_code": "E-010",
+      "requires_validation": false,
+      "parameters": {
+        "ratio_threshold": 2.0,
+        "note": "Alerter si section_utilisee > ratio_threshold × section_minimale_normative pour le calibre donné."
+      }
+    },
+    {
+      "id": "SUG-002",
+      "name": "Chute de tension proche du seuil normatif (marge < 0,5 %)",
+      "source": "Bonne pratique métier — marge de sécurité",
+      "description": "La chute de tension calculée est inférieure au seuil normatif mais la marge est inférieure à 0,5 %. En pratique, les longueurs réelles sur chantier sont souvent supérieures aux longueurs théoriques CANECO. Un recalcul avec la longueur majorée est recommandé.",
+      "check_type": "voltage_drop_near_limit",
+      "enabled": true,
+      "severity": "INFO",
+      "gap_code": "E-010",
+      "requires_validation": false,
+      "parameters": {
+        "warning_margin_pct": 0.5
+      }
+    },
+    {
+      "id": "SUG-003",
+      "name": "Type de câble plus haut de gamme que nécessaire",
+      "source": "Bonne pratique métier — optimisation économique",
+      "description": "Un câble U1000 R2V est utilisé dans un contexte où un câble H07V-K en conduit serait techniquement suffisant (installation sous conduit en cheminement intérieur sec). Le U1000 R2V coûte significativement plus cher et son utilisation doit être justifiée (cheminement à l'air libre, protection mécanique requise).",
+      "check_type": "cable_type_overspec",
+      "enabled": true,
+      "severity": "INFO",
+      "gap_code": "E-010",
+      "requires_validation": true,
+      "parameters": {
+        "overspec_pairs": [
+          {"used": "U1000R2V", "alternative": "H07VK", "context": "conduit_interieur_sec"},
+          {"used": "U1000RO2V", "alternative": "U1000R2V", "context": "general"}
+        ],
+        "note": "Vérifier dans le CPS si le type de câble est imposé avant de lever cette suggestion."
+      }
+    },
+    {
+      "id": "SUG-004",
+      "name": "Calibre de protection surdimensionné par rapport au courant d'emploi IB",
+      "source": "Bonne pratique métier — optimisation économique",
+      "description": "Le calibre In du disjoncteur est plus de deux fois supérieur au courant d'emploi IB du circuit. Bien que normatif (IB ≤ In ≤ Iz), un fort surdimensionnement augmente le coût et peut réduire la sélectivité avec les protections aval. Vérifier si la section du câble impose ce calibre ou si un calibre inférieur serait envisageable.",
+      "check_type": "oversized_calibre",
+      "enabled": true,
+      "severity": "INFO",
+      "gap_code": "E-010",
+      "requires_validation": false,
+      "parameters": {
+        "ratio_threshold": 2.0
+      }
+    },
+    {
+      "id": "SUG-005",
+      "name": "Longueur significative sans accessoires de cheminement au bordereau",
+      "source": "Bonne pratique métier — exhaustivité du bordereau",
+      "description": "Le circuit présente une longueur supérieure au seuil mais aucun article de chemin de câbles, goulotte ou conduit correspondant n'est identifiable dans le bordereau. Vérifier que le support de cheminement est bien prévu, soit dans ce lot, soit dans un autre lot de l'affaire.",
+      "check_type": "missing_cable_tray_in_bordereau",
+      "enabled": true,
+      "severity": "INFO",
+      "gap_code": "E-010",
+      "requires_validation": true,
+      "parameters": {
+        "length_threshold_m": 20.0,
+        "cable_tray_keywords": ["chemin", "chem cable", "goulotte", "conduit", "tube", "fourreau", "IRO", "IRL", "ICT"]
+      }
+    },
+    {
+      "id": "SUG-006",
+      "name": "Courbe de déclenchement inadaptée au type de charge",
+      "source": "Bonne pratique métier — NF C 15-100 Art. 533.1",
+      "description": "La courbe de déclenchement déduite du rapport IrMg/IN ne correspond pas au type de charge. Exemple : courbe C sur un circuit éclairage (risque de non-déclenchement sur défaut résistant en bout de câble long), ou courbe B sur un moteur (risque de déclenchement intempestif au démarrage).",
+      "check_type": "curve_mismatch",
+      "enabled": true,
+      "severity": "INFO",
+      "gap_code": "E-010",
+      "requires_validation": true,
+      "parameters": {
+        "curve_ranges": {
+          "B": [3.0, 5.0],
+          "C": [5.0, 10.0],
+          "D": [10.0, 20.0]
+        },
+        "preferred_curve_by_style": {
+          "eclairage": "B",
+          "prise": "C",
+          "moteur": "D",
+          "chauffage": "C",
+          "compresseur": "D",
+          "pompe": "D"
+        }
+      }
+    },
+    {
+      "id": "SUG-007",
+      "name": "DDR type AC sur charge non-linéaire — risque de non-déclenchement",
+      "source": "Bonne pratique métier — IEC 62423, guide UTE C 15-900",
+      "description": "Un DDR de type AC est utilisé pour protéger un circuit alimentant une charge non-linéaire (variateur, chargeur VE, équipement informatique). Les DDR type AC ne détectent pas les courants de fuite pulsés ou continus générés par ces charges. Risque de non-déclenchement en cas de défaut.",
+      "check_type": "ddr_type_mismatch",
+      "enabled": true,
+      "severity": "INFO",
+      "gap_code": "E-010",
+      "requires_validation": true,
+      "parameters": {
+        "nonlinear_keywords": ["variateur", "vfd", "onduleur", "ups", "chargeur", "ve", "borne", "vrd"],
+        "wrong_ddr_type": "AC",
+        "correct_ddr_type": "A"
+      }
+    },
+    {
+      "id": "SUG-008",
+      "name": "Parafoudre recommandé pour alimentation par ligne aérienne",
+      "source": "Bonne pratique métier — NF C 15-100 Art. 534, guide UTE C 15-443",
+      "description": "Si le bâtiment est alimenté partiellement ou totalement par une ligne aérienne, l'installation d'un parafoudre Type 2 en tête de tableau est fortement recommandée même hors obligation réglementaire. Les surtensions atmosphériques peuvent détruire les équipements électroniques en une fraction de seconde.",
+      "check_type": "surge_protection_recommendation",
+      "enabled": true,
+      "severity": "INFO",
+      "gap_code": "E-010",
+      "requires_validation": true,
+      "parameters": {
+        "note": "Vérifier dans le CPS si l'alimentation est aérienne. En l'absence d'info, suggérer la vérification."
+      }
+    },
+    {
+      "id": "SUG-009",
+      "name": "Section PE surdimensionnée",
+      "source": "Bonne pratique métier — NF C 15-100 Art. 543.1",
+      "description": "La section du conducteur PE est significativement supérieure au minimum requis par NF C 15-100. Bien que sans impact sur la sécurité, cela augmente le coût et le poids du câble. Vérifier si le surdimensionnement est volontaire (câble normalisé supérieur) ou une erreur de spécification.",
+      "check_type": "oversized_pe",
+      "enabled": true,
+      "severity": "INFO",
+      "gap_code": "E-010",
+      "requires_validation": false,
+      "parameters": {
+        "ratio_alert_threshold": 2.0
+      }
+    },
+    {
+      "id": "SUG-010",
+      "name": "Longueur importante — chute de tension à recalculer avec longueur majorée",
+      "source": "Bonne pratique métier — retour chantier",
+      "description": "Le circuit a une longueur supérieure au seuil. Les longueurs CANECO sont théoriques (calcul à plat ou en ligne droite) et la longueur réelle sur chantier est souvent 10 à 20 % supérieure (contournements, hauteur de dalle, etc.). Recalculer la chute de tension avec une longueur majorée de 15 %.",
+      "check_type": "long_cable_recheck",
+      "enabled": true,
+      "severity": "INFO",
+      "gap_code": "E-010",
+      "requires_validation": false,
+      "parameters": {
+        "length_threshold_m": 50.0,
+        "suggested_margin_pct": 15.0
+      }
+    },
+    {
+      "id": "SUG-011",
+      "name": "Conducteur aluminium — points d'attention connexion",
+      "source": "Bonne pratique métier — NF C 15-100 Art. 526.1",
+      "description": "Le circuit utilise un conducteur en aluminium. L'aluminium s'oxyde et se déforme sous les serres-câbles. Les connexions doivent être réalisées avec des bornes spécifiques aluminium ou bimétalliques, et vérifiées périodiquement. S'assurer que les équipements terminaux acceptent les conducteurs aluminium.",
+      "check_type": "aluminium_conductor_warning",
+      "enabled": true,
+      "severity": "INFO",
+      "gap_code": "E-010",
+      "requires_validation": false,
+      "parameters": {
+        "material_keyword": "Al"
+      }
+    },
+    {
+      "id": "SUG-012",
+      "name": "Hétérogénéité des courbes de déclenchement dans un même tableau",
+      "source": "Bonne pratique métier — sélectivité et cohérence",
+      "description": "Le tableau contient un mélange de courbes B, C et D sans justification apparente liée aux types de charges. Cette hétérogénéité peut compliquer la maintenance et réduire la sélectivité. Une normalisation des courbes par famille de charges est recommandée.",
+      "check_type": "curve_heterogeneity",
+      "enabled": true,
+      "severity": "INFO",
+      "gap_code": "E-010",
+      "requires_validation": true,
+      "parameters": {
+        "max_curve_types": 2,
+        "note": "Analyse au niveau du tableau : compter les types de courbes distincts parmi les départs."
+      }
+    },
+    {
+      "id": "SUG-013",
+      "name": "Sélectivité partielle — tableau divisionnaire proche du TGBT",
+      "source": "Bonne pratique métier — guide UTE C 15-105 §5.3",
+      "description": "Un tableau divisionnaire alimenté directement depuis le TGBT avec un calibre identique ou proche présente un risque de sélectivité partielle. En cas de défaut sur ce tableau, le disjoncteur général du TGBT peut déclencher en même temps, coupant d'autres circuits. Envisager une protection de plus gros calibre en tête du tableau amont.",
+      "check_type": "partial_selectivity_warning",
+      "enabled": true,
+      "severity": "INFO",
+      "gap_code": "E-010",
+      "requires_validation": true,
+      "parameters": {
+        "calibre_ratio_warning": 1.25,
+        "note": "Comparer calibre du départ amont (au TGBT) avec calibre général du tableau aval."
+      }
+    },
+    {
+      "id": "SUG-014",
+      "name": "Circuit sans protection différentielle détecté",
+      "source": "Bonne pratique métier — NF C 15-100 Art. 531",
+      "description": "Le circuit n'a pas de protection différentielle renseignée dans CANECO. Vérifier si une DDR est prévue en tête de tableau ou si ce circuit est explicitement exempté. L'absence de différentiel est acceptable uniquement sur des circuits en TBTS ou TBTF, ou dans des cas très particuliers documentés.",
+      "check_type": "missing_ddr_check",
+      "enabled": true,
+      "severity": "INFO",
+      "gap_code": "E-010",
+      "requires_validation": true,
+      "parameters": {
+        "note": "Vérifier le champ bloc_differentiel. Si vide ou None, alerter pour vérification."
+      }
+    },
+    {
+      "id": "SUG-015",
+      "name": "Câble multiconducteur en triphasé — neutre potentiellement réductible",
+      "source": "Bonne pratique métier — NF C 15-100 Art. 524.3",
+      "description": "Le circuit triphasé utilise un câble 5G (5 conducteurs de même section). Pour les charges linéaires équilibrées (moteurs), la section du neutre peut être réduite à la moitié de la section de phase si elle est supérieure à 16 mm², réduisant le coût. Cette réduction est interdite si des harmoniques de rang 3 sont présents.",
+      "check_type": "neutral_reduction_opportunity",
+      "enabled": true,
+      "severity": "INFO",
+      "gap_code": "E-010",
+      "requires_validation": true,
+      "parameters": {
+        "min_section_for_reduction_mm2": 16.0,
+        "applicable_styles": ["moteur", "motor", "chauffage"],
+        "note": "Ne jamais réduire le neutre sans vérification des harmoniques et accord du bureau d'études."
+      }
+    }
+  ]
+}
