@@ -56,7 +56,7 @@ export default function ProjectsPage() {
   }
 
   return (
-    <div className="p-6">
+    <div className="flex-1 min-h-0 overflow-auto p-6">
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-lg font-semibold text-text-primary">Projets</h2>
         <button

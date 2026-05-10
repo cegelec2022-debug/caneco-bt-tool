@@ -74,7 +74,7 @@ export default function Layout() {
           </div>
         </nav>
 
-        <main className="flex-1 overflow-auto bg-bg-light">
+        <main className="flex-1 min-h-0 overflow-hidden bg-bg-light flex flex-col">
           <Outlet />
         </main>
       </div>

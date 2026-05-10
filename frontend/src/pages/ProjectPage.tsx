@@ -202,7 +202,7 @@ export default function ProjectPage() {
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex-1 min-h-0 flex flex-col">
       {/* En-tete projet — epingle, ne scrolle jamais */}
       <div className="shrink-0 px-6 py-4 border-b border-border-std bg-white">
         <button
@@ -278,9 +278,9 @@ export default function ProjectPage() {
       </div>
 
       {/* Contenu onglets — zone de defilement independante par onglet */}
-      <div className="flex-1 min-h-0 overflow-hidden">
+      <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
         {activeTab === "overview" && (
-          <div className="h-full overflow-auto p-6">
+          <div className="flex-1 min-h-0 overflow-auto p-6">
             <div className="max-w-lg space-y-4">
               <div className="bg-white border border-border-std rounded p-4">
                 <h3 className="text-xs font-semibold text-text-tertiary uppercase tracking-wide mb-3">
@@ -312,14 +312,14 @@ export default function ProjectPage() {
         {activeTab === "studies" && <EtudesTab projectId={id!} />}
 
         {activeTab === "tableaux" && (
-          <div className="h-full overflow-auto p-6">
+          <div className="flex-1 min-h-0 overflow-auto p-6">
             <div className="text-sm text-text-tertiary">
               Module 3 — Bordereau / CPS / Verification (disponible en V1.1)
             </div>
           </div>
         )}
         {activeTab === "doe" && (
-          <div className="h-full overflow-auto p-6">
+          <div className="flex-1 min-h-0 overflow-auto p-6">
             <div className="text-sm text-text-tertiary">
               Module 5 — Generation DOE (disponible en V1.1)
             </div>
@@ -535,7 +535,7 @@ function EtudesTab({ projectId }: { projectId: string }) {
   const hasTable = !!selectedExportId && !!selectedExport;
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex-1 min-h-0 flex flex-col">
       {/* Zone haute : actions + cartes d'import
           - Sans table ouverte : defilement libre (flex-1 overflow-auto)
           - Avec table ouverte : taille fixe et epinglee en haut (shrink-0) */}
@@ -823,7 +823,7 @@ function LinesTable({
     selectedExport.lines_read !== selectedExport.line_count;
 
   return (
-    <div className="flex flex-col h-full gap-2">
+    <div className="flex-1 min-h-0 flex flex-col gap-2">
       {/* Ligne de metadonnees — taille fixe */}
       {meta && (
         <p
