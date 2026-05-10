@@ -1,11 +1,12 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Eye, EyeOff } from "lucide-react";
+import { ChevronDown, Eye, EyeOff } from "lucide-react";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { useNavigate } from "react-router-dom";
 import { z } from "zod";
 import { login } from "@/api/auth";
 import { useAuth } from "@/context/AuthContext";
+import { cn } from "@/lib/utils";
 
 const schema = z.object({
   email: z.string().email("Adresse email invalide"),
@@ -14,15 +15,48 @@ const schema = z.object({
 
 type FormData = z.infer<typeof schema>;
 
+const DEMO_ACCOUNTS = [
+  {
+    label: "Administrateur",
+    name: "Administrateur Actemium",
+    email: "admin@actemium.fr",
+    role: "Accès complet",
+    color: "bg-vinci-blue text-white",
+  },
+  {
+    label: "Bureau d'Etudes",
+    name: "Mouhcine Benali",
+    email: "be@actemium.fr",
+    role: "Ses propres projets",
+    color: "bg-blue-50 text-blue-700",
+  },
+  {
+    label: "Chef de Chantier",
+    name: "Mouad Alami",
+    email: "chef@actemium.fr",
+    role: "Ses propres projets",
+    color: "bg-orange-50 text-orange-700",
+  },
+  {
+    label: "Responsable Affaires",
+    name: "Jibrane Mansouri",
+    email: "ra@actemium.fr",
+    role: "Tous les projets + tableau de bord",
+    color: "bg-green-50 text-green-700",
+  },
+] as const;
+
 export default function LoginPage() {
   const { setToken } = useAuth();
   const navigate = useNavigate();
   const [serverError, setServerError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
+  const [showDemo, setShowDemo] = useState(false);
 
   const {
     register,
     handleSubmit,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<FormData>({ resolver: zodResolver(schema) });
 
@@ -39,13 +73,19 @@ export default function LoginPage() {
       } else if (status === 403) {
         setServerError("Votre compte est désactivé. Contactez l'administrateur.");
       } else {
-        setServerError("Impossible de joindre le serveur. Vérifiez votre connexion.");
+        setServerError("Impossible de joindre le serveur. Vérifiez votre connexion réseau.");
       }
     }
   }
 
+  function fillAccount(email: string) {
+    setValue("email", email, { shouldValidate: true });
+    setValue("password", "Demo2026!", { shouldValidate: true });
+  }
+
   return (
     <div className="min-h-screen bg-bg-light flex flex-col">
+      {/* Header */}
       <header className="bg-vinci-blue text-white px-6 py-3 flex items-center justify-between">
         <div>
           <h1 className="text-lg font-semibold tracking-tight">
@@ -64,6 +104,7 @@ export default function LoginPage() {
             Entrez vos identifiants pour accéder à l'outil.
           </p>
 
+          {/* Formulaire */}
           <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-5">
             {/* Email */}
             <div>
@@ -82,11 +123,12 @@ export default function LoginPage() {
                 {...register("email")}
                 aria-invalid={!!errors.email}
                 aria-describedby={errors.email ? "email-error" : undefined}
-                className={`w-full border rounded px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-vinci-blue/30 transition-colors ${
+                className={cn(
+                  "w-full border rounded px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-vinci-blue/30 transition-colors",
                   errors.email
                     ? "border-status-warn focus:border-status-warn"
                     : "border-border-std focus:border-vinci-blue"
-                }`}
+                )}
               />
               {errors.email && (
                 <p id="email-error" role="alert" className="text-xs text-status-warn mt-1">
@@ -111,11 +153,12 @@ export default function LoginPage() {
                   {...register("password")}
                   aria-invalid={!!errors.password}
                   aria-describedby={errors.password ? "password-error" : undefined}
-                  className={`w-full border rounded px-3 py-2 pr-10 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-vinci-blue/30 transition-colors ${
+                  className={cn(
+                    "w-full border rounded px-3 py-2 pr-10 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-vinci-blue/30 transition-colors",
                     errors.password
                       ? "border-status-warn focus:border-status-warn"
                       : "border-border-std focus:border-vinci-blue"
-                  }`}
+                  )}
                 />
                 <button
                   type="button"
@@ -144,7 +187,7 @@ export default function LoginPage() {
               </div>
             )}
 
-            {/* Bouton */}
+            {/* Bouton connexion */}
             <button
               type="submit"
               disabled={isSubmitting}
@@ -161,7 +204,58 @@ export default function LoginPage() {
             </button>
           </form>
 
-          <p className="mt-8 text-center text-xs text-text-tertiary">
+          {/* Section démo */}
+          <div className="mt-8 border border-border-std rounded overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setShowDemo((v) => !v)}
+              className="w-full flex items-center justify-between px-4 py-3 text-xs font-medium text-text-secondary bg-bg-cell hover:bg-bg-cell/80 transition-colors"
+            >
+              <span>Comptes de démonstration</span>
+              <ChevronDown
+                size={14}
+                className={cn("transition-transform", showDemo && "rotate-180")}
+              />
+            </button>
+
+            {showDemo && (
+              <div className="divide-y divide-border-std">
+                {DEMO_ACCOUNTS.map((account) => (
+                  <button
+                    key={account.email}
+                    type="button"
+                    onClick={() => fillAccount(account.email)}
+                    className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-bg-light transition-colors group"
+                  >
+                    <span
+                      className={cn(
+                        "text-xs font-medium px-2 py-0.5 rounded shrink-0",
+                        account.color
+                      )}
+                    >
+                      {account.label}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-medium text-text-primary truncate">
+                        {account.name}
+                      </p>
+                      <p className="text-xs text-text-tertiary truncate">{account.email}</p>
+                    </div>
+                    <span className="text-xs text-text-tertiary opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                      Remplir
+                    </span>
+                  </button>
+                ))}
+                <div className="px-4 py-2 bg-status-info">
+                  <p className="text-xs text-yellow-700">
+                    Mot de passe commun : <span className="font-mono font-semibold">Demo2026!</span>
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <p className="mt-6 text-center text-xs text-text-tertiary">
             Challenge Innovation VEAO 2026
           </p>
         </div>
