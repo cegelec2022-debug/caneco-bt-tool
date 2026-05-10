@@ -22,5 +22,8 @@ echo "Base de données disponible."
 echo "Application des migrations Alembic..."
 alembic upgrade head
 
+echo "Initialisation des données de démarrage..."
+python -m app.db.seed
+
 echo "Démarrage du serveur FastAPI..."
 exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload

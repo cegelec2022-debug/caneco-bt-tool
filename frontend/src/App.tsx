@@ -1,42 +1,30 @@
-import { Route, Routes } from "react-router-dom";
-
-function HomePage() {
-  return (
-    <div className="min-h-screen bg-bg-light flex flex-col">
-      <header className="bg-vinci-blue text-white px-6 py-3 flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-semibold tracking-tight">
-            Valorisation des données CANECO BT
-          </h1>
-          <p className="text-xs text-white/70">Actemium Cegelec — VINCI Energies</p>
-        </div>
-        <img src="/logo-vinci.png" alt="VINCI Energies" className="h-10 object-contain" />
-      </header>
-
-      <main className="flex-1 flex items-center justify-center p-8">
-        <div className="max-w-lg text-center">
-          <div className="w-12 h-1 bg-vinci-red mx-auto mb-6" />
-          <h2 className="text-2xl font-semibold text-text-primary mb-3">
-            Mise en place du squelette technique
-          </h2>
-          <p className="text-text-secondary text-sm leading-relaxed">
-            Le squelette technique est en place. Coller le Bloc 2 du fichier{" "}
-            <code className="bg-bg-cell px-1 rounded text-xs">PROMPT_CLAUDE_CODE.md</code> pour
-            démarrer le développement des fonctionnalités V1.
-          </p>
-          <div className="mt-6 text-xs text-text-tertiary">
-            Challenge Innovation VEAO 2026 — Version 0.1.0-dev
-          </div>
-        </div>
-      </main>
-    </div>
-  );
-}
+import { Navigate, Route, Routes } from "react-router-dom";
+import Layout from "@/components/Layout";
+import ProtectedRoute from "@/components/ProtectedRoute";
+import { AuthProvider } from "@/context/AuthContext";
+import LoginPage from "@/pages/LoginPage";
+import ProjectPage from "@/pages/ProjectPage";
+import ProjectsPage from "@/pages/ProjectsPage";
 
 export default function App() {
   return (
-    <Routes>
-      <Route path="/" element={<HomePage />} />
-    </Routes>
+    <AuthProvider>
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route
+          path="/"
+          element={
+            <ProtectedRoute>
+              <Layout />
+            </ProtectedRoute>
+          }
+        >
+          <Route index element={<Navigate to="/projects" replace />} />
+          <Route path="projects" element={<ProjectsPage />} />
+          <Route path="projects/:id" element={<ProjectPage />} />
+        </Route>
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </AuthProvider>
   );
 }
