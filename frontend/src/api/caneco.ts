@@ -2,7 +2,7 @@ import type { CanecoExport, CanecoExportDetail } from "@/types";
 import api from "./client";
 
 export async function listCaneco(projectId: string): Promise<CanecoExport[]> {
-  const { data } = await api.get<CanecoExport[]>(`/api/projects/${projectId}/caneco`);
+  const { data } = await api.get<CanecoExport[]>(`/projects/${projectId}/caneco`);
   return data;
 }
 
@@ -15,7 +15,7 @@ export async function uploadCaneco(
   form.append("file", file);
   form.append("indice", indice);
   const { data } = await api.post<CanecoExport>(
-    `/api/projects/${projectId}/caneco/upload`,
+    `/projects/${projectId}/caneco/upload`,
     form,
     { headers: { "Content-Type": "multipart/form-data" } }
   );
@@ -29,12 +29,12 @@ export async function getCaneco(
   perPage = 50
 ): Promise<CanecoExportDetail> {
   const { data } = await api.get<CanecoExportDetail>(
-    `/api/projects/${projectId}/caneco/${exportId}`,
+    `/projects/${projectId}/caneco/${exportId}`,
     { params: { page, per_page: perPage } }
   );
   return data;
 }
 
 export async function deleteCaneco(projectId: string, exportId: string): Promise<void> {
-  await api.delete(`/api/projects/${projectId}/caneco/${exportId}`);
+  await api.delete(`/projects/${projectId}/caneco/${exportId}`);
 }
