@@ -14,7 +14,7 @@ export default function Layout() {
   const { user, logout } = useAuth();
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="h-full flex flex-col">
       <header className="bg-vinci-blue text-white px-6 py-3 flex items-center justify-between shrink-0">
         <div>
           <h1 className="text-lg font-semibold tracking-tight">Valorisation des données CANECO BT</h1>
