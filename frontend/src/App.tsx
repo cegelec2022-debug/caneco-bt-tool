@@ -3,13 +3,14 @@ import { Route, Routes } from "react-router-dom";
 function HomePage() {
   return (
     <div className="min-h-screen bg-bg-light flex flex-col">
-      <header className="bg-vinci-blue text-white px-6 py-4 flex items-center gap-4">
+      <header className="bg-vinci-blue text-white px-6 py-3 flex items-center justify-between">
         <div>
           <h1 className="text-lg font-semibold tracking-tight">
             Valorisation des données CANECO BT
           </h1>
           <p className="text-xs text-white/70">Actemium Cegelec — VINCI Energies</p>
         </div>
+        <img src="/logo-vinci.png" alt="VINCI Energies" className="h-10 object-contain" />
       </header>
 
       <main className="flex-1 flex items-center justify-center p-8">

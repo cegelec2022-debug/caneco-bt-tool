@@ -6,7 +6,8 @@ until python -c "
 import sys, os
 try:
     import psycopg
-    conn = psycopg.connect(os.environ['DATABASE_URL'])
+    url = os.environ['DATABASE_URL'].replace('postgresql+psycopg://', 'postgresql://')
+    conn = psycopg.connect(url)
     conn.close()
     sys.exit(0)
 except Exception:
