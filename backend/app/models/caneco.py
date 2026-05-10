@@ -21,6 +21,12 @@ class CanecoExport(Base):
     file_path: Mapped[str | None] = mapped_column(String(500))
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="pending")
     line_count: Mapped[int | None] = mapped_column(Integer)
+    # Nombre de lignes brutes lues dans le fichier (avant dédoublonnage)
+    lines_read: Mapped[int | None] = mapped_column(Integer)
+    # Colonnes détectées dans l'en-tête
+    columns_detected: Mapped[int | None] = mapped_column(Integer)
+    columns_mapped: Mapped[int | None] = mapped_column(Integer)
+    extra_columns_count: Mapped[int | None] = mapped_column(Integer)
     uploaded_by: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"))
     uploaded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -36,28 +42,37 @@ class CanecoLine(Base):
     export_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("caneco_exports.id", ondelete="CASCADE"), nullable=False, index=True
     )
+    # Numéro de ligne dans la feuille Excel (2 = première donnée, car ligne 1 = en-tête)
+    excel_row_number: Mapped[int | None] = mapped_column(Integer, index=True)
     row_index: Mapped[int] = mapped_column(Integer, nullable=False)
 
-    # Colonnes CANECO BT (23 colonnes standard)
-    repere: Mapped[str | None] = mapped_column(String(100))
-    designation: Mapped[str | None] = mapped_column(String(500))
-    style: Mapped[str | None] = mapped_column(String(100))
-    nb_recepteurs: Mapped[int | None] = mapped_column(Integer)
-    consommation: Mapped[float | None] = mapped_column(Float)
-    ib: Mapped[float | None] = mapped_column(Float)
-    longueur: Mapped[float | None] = mapped_column(Float)
-    type_cable: Mapped[str | None] = mapped_column(String(100))
-    cable: Mapped[str | None] = mapped_column(String(100))
-    neutre: Mapped[str | None] = mapped_column(String(50))
-    pe: Mapped[str | None] = mapped_column(String(50))
-    ame: Mapped[str | None] = mapped_column(String(10))
-    calibre: Mapped[float | None] = mapped_column(Float)
-    bloc_coupure: Mapped[str | None] = mapped_column(String(100))
-    bloc_declencheur: Mapped[str | None] = mapped_column(String(100))
-    bloc_differentiel: Mapped[str | None] = mapped_column(String(100))
-    ir_th_in: Mapped[float | None] = mapped_column(Float)
-    ir_mg_in: Mapped[float | None] = mapped_column(Float)
-    icu: Mapped[float | None] = mapped_column(Float)
+    # 23 colonnes CANECO BT (dans l'ordre de la feuille)
+    amont: Mapped[str | None] = mapped_column(String(200))           # col 0 — Amont
+    repere_aval: Mapped[str | None] = mapped_column(String(200))     # col 1 — Repère aval
+    repere: Mapped[str | None] = mapped_column(String(100))          # col 2 — Repère
+    designation: Mapped[str | None] = mapped_column(String(500))     # col 3 — Désignation
+    style: Mapped[str | None] = mapped_column(String(100))           # col 4 — Style
+    nb_recepteurs: Mapped[int | None] = mapped_column(Integer)       # col 5 — Nb récepteurs
+    consommation: Mapped[str | None] = mapped_column(String(200))    # col 6 — Consommation (ex. "800kVA")
+    ib: Mapped[float | None] = mapped_column(Float)                  # col 7 — IB
+    longueur: Mapped[float | None] = mapped_column(Float)            # col 8 — Longueur
+    type_cable: Mapped[str | None] = mapped_column(String(100))      # col 9 — Type de câble
+    nb_cables_multi: Mapped[int | None] = mapped_column(Integer)     # col 10 — Nb câbles multi
+    cable: Mapped[str | None] = mapped_column(String(100))           # col 11 — Câble
+    neutre: Mapped[str | None] = mapped_column(String(50))           # col 12 — Neutre
+    pe: Mapped[str | None] = mapped_column(String(50))               # col 13 — PE ou PEN
+    calibre: Mapped[float | None] = mapped_column(Float)             # col 14 — Calibre
+    bloc_coupure: Mapped[str | None] = mapped_column(String(100))    # col 15 — Bloc de coupure
+    bloc_declencheur: Mapped[str | None] = mapped_column(String(100))# col 16 — Bloc déclencheur
+    bloc_differentiel: Mapped[str | None] = mapped_column(String(100))# col 17 — Bloc différentiel
+    ir_th_in: Mapped[float | None] = mapped_column(Float)            # col 18 — IrTh / IN
+    ir_mg_in: Mapped[float | None] = mapped_column(Float)            # col 19 — IrMg / IN
+    icu: Mapped[float | None] = mapped_column(Float)                 # col 20 — Icu
+    contacteur: Mapped[str | None] = mapped_column(String(100))      # col 21 — Contacteur
+    ame: Mapped[str | None] = mapped_column(String(10))              # col 22 — Ame
 
-    # Colonnes supplémentaires stockées en JSON texte
-    extra_data: Mapped[str | None] = mapped_column(Text)
+    # Valeurs brutes telles qu'elles apparaissent dans Excel (JSON : {col_name: raw_str})
+    raw_data: Mapped[str | None] = mapped_column(Text)
+
+    # Colonnes supplémentaires non reconnues par le schéma standard (JSON)
+    extra_columns: Mapped[str | None] = mapped_column(Text)

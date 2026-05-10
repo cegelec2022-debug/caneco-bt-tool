@@ -1,30 +1,74 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  ChevronFirst,
+  ChevronLast,
   ChevronLeft,
   ChevronRight,
+  Download,
   FileSpreadsheet,
   Pencil,
+  Search,
   Trash2,
   Upload,
   X,
 } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { deleteCaneco, getCaneco, listCaneco, uploadCaneco } from "@/api/caneco";
+import {
+  deleteCaneco,
+  downloadCanecoExcel,
+  getCaneco,
+  listCaneco,
+  updateCanecoIndice,
+  uploadCaneco,
+} from "@/api/caneco";
 import { deleteProject, getProject, updateProject } from "@/api/projects";
 import { cn } from "@/lib/utils";
 import type { CanecoExport, CanecoExportDetail, CanecoLine, ProjectUpdate } from "@/types";
 
-const TABS = [
-  { id: "overview", label: "Vue d'ensemble" },
-  { id: "studies", label: "Etudes" },
-  { id: "tableaux", label: "Tableaux" },
-  { id: "doe", label: "DOE" },
-] as const;
+// ---------------------------------------------------------------------------
+// Constantes tableau
+// ---------------------------------------------------------------------------
 
-type TabId = (typeof TABS)[number]["id"];
+const PAGE_SIZES = [25, 50, 100, 200] as const;
+type PageSize = (typeof PAGE_SIZES)[number];
 
-const STATUS_OPTIONS = ["actif", "en_attente", "archivé"];
+type ColDef = {
+  key: keyof CanecoLine;
+  label: string;
+  numeric?: boolean;
+  width?: string;
+};
+
+const COLUMNS: ColDef[] = [
+  { key: "amont", label: "Amont", width: "min-w-[100px]" },
+  { key: "repere_aval", label: "Repere aval", width: "min-w-[110px]" },
+  { key: "repere", label: "Repere", width: "min-w-[100px]" },
+  { key: "designation", label: "Designation", width: "min-w-[180px]" },
+  { key: "style", label: "Style", width: "min-w-[90px]" },
+  { key: "nb_recepteurs", label: "Nb rec.", numeric: true, width: "min-w-[70px]" },
+  { key: "consommation", label: "Conso.", width: "min-w-[90px]" },
+  { key: "ib", label: "Ib (A)", numeric: true, width: "min-w-[70px]" },
+  { key: "longueur", label: "Long. (m)", numeric: true, width: "min-w-[80px]" },
+  { key: "type_cable", label: "Type cable", width: "min-w-[100px]" },
+  { key: "nb_cables_multi", label: "Multi", numeric: true, width: "min-w-[60px]" },
+  { key: "cable", label: "Section", width: "min-w-[90px]" },
+  { key: "neutre", label: "Neutre", width: "min-w-[80px]" },
+  { key: "pe", label: "PE/PEN", width: "min-w-[80px]" },
+  { key: "calibre", label: "Calibre", numeric: true, width: "min-w-[72px]" },
+  { key: "bloc_coupure", label: "Bloc coup.", width: "min-w-[100px]" },
+  { key: "bloc_declencheur", label: "Declench.", width: "min-w-[100px]" },
+  { key: "bloc_differentiel", label: "Diff.", width: "min-w-[80px]" },
+  { key: "ir_th_in", label: "IrTh/IN", numeric: true, width: "min-w-[72px]" },
+  { key: "ir_mg_in", label: "IrMg/IN", numeric: true, width: "min-w-[72px]" },
+  { key: "icu", label: "Icu (kA)", numeric: true, width: "min-w-[72px]" },
+  { key: "contacteur", label: "Contacteur", width: "min-w-[100px]" },
+  { key: "ame", label: "Ame", width: "min-w-[60px]" },
+];
+
+// ---------------------------------------------------------------------------
+// Utilitaires
+// ---------------------------------------------------------------------------
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("fr-FR", {
@@ -43,6 +87,47 @@ function formatDateTime(iso: string) {
     minute: "2-digit",
   });
 }
+
+function formatNum(n: number): string {
+  if (Number.isInteger(n)) return String(n);
+  return n.toLocaleString("fr-FR", { maximumFractionDigits: 3 });
+}
+
+/** Detecte l'indice depuis le nom du fichier (client-side, meme regex que le backend). */
+function detectIndiceFromFilename(filename: string): string | null {
+  const m = filename.toUpperCase().match(/INDICE[_\s]+([A-Z][0-9]*)/);
+  if (m) return m[1];
+  const m2 = filename.toUpperCase().match(/[_\s]([A-Z])\./);
+  if (m2) return m2[1];
+  return null;
+}
+
+/** Verifie si la valeur normalisee differe de la valeur brute (non normalisee). */
+function isRawOnly(line: CanecoLine, fieldKey: keyof CanecoLine): boolean {
+  const value = line[fieldKey];
+  if (value !== null && value !== undefined) return false;
+  const rawVal = line.raw_data?.[fieldKey as string];
+  return !!rawVal && rawVal.trim() !== "";
+}
+
+function getRawValue(line: CanecoLine, fieldKey: keyof CanecoLine): string {
+  return line.raw_data?.[fieldKey as string] ?? "";
+}
+
+// ---------------------------------------------------------------------------
+// Onglets
+// ---------------------------------------------------------------------------
+
+const TABS = [
+  { id: "overview", label: "Vue d'ensemble" },
+  { id: "studies", label: "Etudes" },
+  { id: "tableaux", label: "Tableaux" },
+  { id: "doe", label: "DOE" },
+] as const;
+
+type TabId = (typeof TABS)[number]["id"];
+
+const STATUS_OPTIONS = ["actif", "en_attente", "archive"];
 
 // ---------------------------------------------------------------------------
 // Composant principal
@@ -75,7 +160,7 @@ export default function ProjectPage() {
     onError: (err: unknown) => {
       const msg =
         (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
-        "Erreur lors de la mise à jour.";
+        "Erreur lors de la mise a jour.";
       setEditError(msg);
     },
   });
@@ -120,7 +205,7 @@ export default function ProjectPage() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* En-tête projet */}
+      {/* En-tete projet */}
       <div className="px-6 py-4 border-b border-border-std bg-white">
         <button
           onClick={() => navigate("/projects")}
@@ -146,9 +231,9 @@ export default function ProjectPage() {
               className={cn(
                 "text-xs px-2 py-1 rounded",
                 project.status === "actif" && "bg-green-100 text-status-ok",
-                project.status === "archivé" && "bg-gray-100 text-text-tertiary",
+                project.status === "archive" && "bg-gray-100 text-text-tertiary",
                 project.status === "en_attente" && "bg-yellow-100 text-yellow-700",
-                !["actif", "archivé", "en_attente"].includes(project.status) &&
+                !["actif", "archive", "en_attente"].includes(project.status) &&
                   "bg-bg-cell text-text-tertiary"
               )}
             >
@@ -217,25 +302,23 @@ export default function ProjectPage() {
                 Historique
               </h3>
               <dl className="space-y-2.5 text-sm">
-                <Row label="Créé le" value={formatDate(project.created_at)} />
-                <Row label="Modifié le" value={formatDate(project.updated_at)} />
+                <Row label="Cree le" value={formatDate(project.created_at)} />
+                <Row label="Modifie le" value={formatDate(project.updated_at)} />
               </dl>
             </div>
           </div>
         )}
 
-        {activeTab === "studies" && (
-          <EtudesTab projectId={id!} />
-        )}
+        {activeTab === "studies" && <EtudesTab projectId={id!} />}
 
         {activeTab === "tableaux" && (
           <div className="text-sm text-text-tertiary">
-            Module 3 — Bordereau / CPS / Vérification (disponible en V1.1)
+            Module 3 — Bordereau / CPS / Verification (disponible en V1.1)
           </div>
         )}
         {activeTab === "doe" && (
           <div className="text-sm text-text-tertiary">
-            Module 5 — Génération DOE (disponible en V1.1)
+            Module 5 — Generation DOE (disponible en V1.1)
           </div>
         )}
       </div>
@@ -312,9 +395,7 @@ export default function ProjectPage() {
                 </select>
               </div>
 
-              {editError && (
-                <p className="text-xs text-status-warn">{editError}</p>
-              )}
+              {editError && <p className="text-xs text-status-warn">{editError}</p>}
 
               <div className="flex gap-3 justify-end pt-2">
                 <button
@@ -337,7 +418,7 @@ export default function ProjectPage() {
         </div>
       )}
 
-      {/* Modal confirmation suppression */}
+      {/* Modal confirmation suppression projet */}
       {showDeleteConfirm && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded w-full max-w-sm shadow-lg p-6">
@@ -346,11 +427,11 @@ export default function ProjectPage() {
             </div>
             <h3 className="font-semibold text-text-primary mb-2">Supprimer le projet</h3>
             <p className="text-sm text-text-secondary mb-1">
-              Vous êtes sur le point de supprimer{" "}
+              Vous etes sur le point de supprimer{" "}
               <span className="font-medium text-text-primary">{project.name}</span>.
             </p>
             <p className="text-xs text-text-tertiary mb-6">
-              Cette action est irréversible. Toutes les données associées seront perdues.
+              Cette action est irreversible. Toutes les donnees associees seront perdues.
             </p>
             <div className="flex gap-3 justify-end">
               <button
@@ -365,7 +446,7 @@ export default function ProjectPage() {
                 disabled={isDeleting}
                 className="px-4 py-2 text-sm bg-red-600 text-white rounded hover:bg-red-700 transition-colors disabled:opacity-50"
               >
-                {isDeleting ? "Suppression..." : "Supprimer définitivement"}
+                {isDeleting ? "Suppression..." : "Supprimer definitivement"}
               </button>
             </div>
           </div>
@@ -376,15 +457,19 @@ export default function ProjectPage() {
 }
 
 // ---------------------------------------------------------------------------
-// Onglet Etudes — upload + tableau des données
+// Onglet Etudes
 // ---------------------------------------------------------------------------
 
 function EtudesTab({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
   const [selectedExportId, setSelectedExportId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState<PageSize>(50);
+  const [search, setSearch] = useState("");
+  const [searchInput, setSearchInput] = useState("");
   const [showUpload, setShowUpload] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [editIndiceId, setEditIndiceId] = useState<string | null>(null);
 
   const { data: exports, isLoading: loadingExports } = useQuery({
     queryKey: ["caneco", projectId],
@@ -392,8 +477,8 @@ function EtudesTab({ projectId }: { projectId: string }) {
   });
 
   const { data: detail, isLoading: loadingDetail } = useQuery({
-    queryKey: ["caneco-detail", projectId, selectedExportId, page],
-    queryFn: () => getCaneco(projectId, selectedExportId!, page, 50),
+    queryKey: ["caneco-detail", projectId, selectedExportId, page, perPage, search],
+    queryFn: () => getCaneco(projectId, selectedExportId!, page, perPage, search),
     enabled: !!selectedExportId,
   });
 
@@ -408,9 +493,32 @@ function EtudesTab({ projectId }: { projectId: string }) {
     },
   });
 
+  const { mutate: doUpdateIndice } = useMutation({
+    mutationFn: ({ exportId, indice }: { exportId: string; indice: string }) =>
+      updateCanecoIndice(projectId, exportId, indice),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["caneco", projectId] });
+      setEditIndiceId(null);
+    },
+  });
+
+  function handleSearch(e: React.FormEvent) {
+    e.preventDefault();
+    setSearch(searchInput);
+    setPage(1);
+  }
+
+  function handleClearSearch() {
+    setSearchInput("");
+    setSearch("");
+    setPage(1);
+  }
+
   function handleSelectExport(exp: CanecoExport) {
     setSelectedExportId(exp.id);
     setPage(1);
+    setSearch("");
+    setSearchInput("");
     setShowUpload(false);
   }
 
@@ -419,6 +527,7 @@ function EtudesTab({ projectId }: { projectId: string }) {
   }
 
   const hasExports = exports && exports.length > 0;
+  const selectedExport = exports?.find((e) => e.id === selectedExportId) ?? null;
 
   return (
     <div className="space-y-4">
@@ -458,32 +567,45 @@ function EtudesTab({ projectId }: { projectId: string }) {
         />
       )}
 
-      {/* Liste des imports */}
+      {/* Etat vide */}
       {!hasExports && !showUpload && (
         <EmptyState onUpload={() => setShowUpload(true)} />
       )}
 
+      {/* Liste des imports */}
       {hasExports && (
-        <div className="grid grid-cols-1 gap-3">
-          {exports.map((exp) => (
+        <div className="grid grid-cols-1 gap-2">
+          {exports.map((exp, idx) => (
             <ExportCard
               key={exp.id}
               exp={exp}
+              isFirst={idx === 0}
               isSelected={selectedExportId === exp.id}
               onSelect={() => handleSelectExport(exp)}
               onDelete={() => setConfirmDeleteId(exp.id)}
+              onEditIndice={() => setEditIndiceId(exp.id)}
             />
           ))}
         </div>
       )}
 
       {/* Tableau des lignes */}
-      {selectedExportId && (
+      {selectedExportId && selectedExport && (
         <LinesTable
+          projectId={projectId}
+          exportId={selectedExportId}
+          selectedExport={selectedExport}
           detail={detail ?? null}
           isLoading={loadingDetail}
           page={page}
-          onPageChange={setPage}
+          perPage={perPage}
+          search={search}
+          searchInput={searchInput}
+          onPageChange={(p) => setPage(p)}
+          onPerPageChange={(pp) => { setPerPage(pp); setPage(1); }}
+          onSearchSubmit={handleSearch}
+          onSearchInputChange={setSearchInput}
+          onClearSearch={handleClearSearch}
         />
       )}
 
@@ -495,8 +617,11 @@ function EtudesTab({ projectId }: { projectId: string }) {
               <Trash2 size={18} className="text-status-warn" />
             </div>
             <h3 className="font-semibold text-text-primary mb-2">Supprimer l'import</h3>
-            <p className="text-sm text-text-secondary mb-6">
-              Cette action supprimera l'import et toutes ses lignes de manière irréversible.
+            <p className="text-sm text-text-secondary mb-1">
+              Cette action supprimera definitivement cet import et toutes ses lignes parsees.
+            </p>
+            <p className="text-xs text-text-tertiary mb-6">
+              Cette operation est irreversible.
             </p>
             <div className="flex gap-3 justify-end">
               <button
@@ -517,50 +642,73 @@ function EtudesTab({ projectId }: { projectId: string }) {
           </div>
         </div>
       )}
+
+      {/* Modal modification indice */}
+      {editIndiceId && (
+        <IndiceModal
+          currentIndice={exports?.find((e) => e.id === editIndiceId)?.indice ?? ""}
+          onSave={(indice) => doUpdateIndice({ exportId: editIndiceId, indice })}
+          onClose={() => setEditIndiceId(null)}
+        />
+      )}
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Carte d'un export
+// Carte export
 // ---------------------------------------------------------------------------
 
 function ExportCard({
   exp,
+  isFirst,
   isSelected,
   onSelect,
   onDelete,
+  onEditIndice,
 }: {
   exp: CanecoExport;
+  isFirst: boolean;
   isSelected: boolean;
   onSelect: () => void;
   onDelete: () => void;
+  onEditIndice: () => void;
 }) {
   const statusConfig = {
-    parsed: { label: "Parsé", cls: "bg-green-100 text-status-ok" },
+    parsed: { label: "Parse", cls: "bg-green-100 text-status-ok" },
     parsing: { label: "En cours...", cls: "bg-yellow-100 text-yellow-700" },
     error: { label: "Erreur", cls: "bg-red-100 text-status-warn" },
   } as const;
 
   const cfg = statusConfig[exp.status] ?? { label: exp.status, cls: "bg-bg-cell text-text-tertiary" };
+  const histBadge = isFirst
+    ? { label: "actif", cls: "bg-green-100 text-status-ok" }
+    : { label: "ancien", cls: "bg-gray-100 text-text-tertiary" };
+
+  const metaLine = exp.status === "parsed" && exp.columns_mapped !== null
+    ? `${exp.lines_read ?? 0} lignes lues, ${exp.line_count ?? 0} parsees — ${exp.columns_mapped}/${exp.columns_detected ?? 23} colonnes standard${(exp.extra_columns_count ?? 0) > 0 ? `, ${exp.extra_columns_count} suppl.` : ""}`
+    : null;
 
   return (
     <div
       className={cn(
-        "border rounded p-4 cursor-pointer transition-colors group",
+        "border rounded p-3.5 cursor-pointer transition-colors group",
         isSelected
-          ? "border-vinci-blue bg-blue-50/50"
+          ? "border-vinci-blue bg-blue-50/40"
           : "border-border-std bg-white hover:border-vinci-blue/40"
       )}
       onClick={onSelect}
     >
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
-          <FileSpreadsheet size={18} className="text-text-tertiary shrink-0" />
+          <FileSpreadsheet size={16} className="text-text-tertiary shrink-0" />
           <div className="min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-1.5 flex-wrap">
               <span className="text-xs font-semibold px-2 py-0.5 rounded bg-vinci-blue text-white">
                 Indice {exp.indice}
+              </span>
+              <span className={cn("text-xs px-2 py-0.5 rounded", histBadge.cls)}>
+                {histBadge.label}
               </span>
               <span className={cn("text-xs px-2 py-0.5 rounded", cfg.cls)}>{cfg.label}</span>
               {exp.line_count !== null && (
@@ -569,12 +717,27 @@ function ExportCard({
                 </span>
               )}
             </div>
-            <p className="text-xs text-text-tertiary mt-1 truncate">{exp.file_name}</p>
+            <p className="text-xs text-text-tertiary mt-0.5 truncate">{exp.file_name}</p>
+            {metaLine && (
+              <p className="text-xs text-text-tertiary mt-0.5">{metaLine}</p>
+            )}
           </div>
         </div>
 
-        <div className="flex items-center gap-3 shrink-0">
-          <span className="text-xs text-text-tertiary">{formatDateTime(exp.uploaded_at)}</span>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-xs text-text-tertiary hidden sm:block">
+            {formatDateTime(exp.uploaded_at)}
+          </span>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onEditIndice();
+            }}
+            className="opacity-0 group-hover:opacity-100 transition-opacity text-text-tertiary hover:text-vinci-blue"
+            title="Modifier l'indice"
+          >
+            <Pencil size={13} />
+          </button>
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -583,7 +746,7 @@ function ExportCard({
             className="opacity-0 group-hover:opacity-100 transition-opacity text-text-tertiary hover:text-status-warn"
             title="Supprimer cet import"
           >
-            <Trash2 size={14} />
+            <Trash2 size={13} />
           </button>
         </div>
       </div>
@@ -595,120 +758,409 @@ function ExportCard({
 // Tableau des lignes
 // ---------------------------------------------------------------------------
 
-const COLUMNS: { key: keyof CanecoLine; label: string; cls?: string }[] = [
-  { key: "repere", label: "Repère", cls: "font-mono" },
-  { key: "designation", label: "Désignation" },
-  { key: "style", label: "Style" },
-  { key: "nb_recepteurs", label: "Nb. réc." },
-  { key: "ib", label: "Ib (A)" },
-  { key: "longueur", label: "Long. (m)" },
-  { key: "type_cable", label: "Type câble" },
-  { key: "cable", label: "Section" },
-  { key: "calibre", label: "Calibre (A)" },
-  { key: "icu", label: "Icu (kA)" },
-];
-
 function LinesTable({
+  projectId,
+  exportId,
+  selectedExport,
   detail,
   isLoading,
   page,
+  perPage,
+  search,
+  searchInput,
   onPageChange,
+  onPerPageChange,
+  onSearchSubmit,
+  onSearchInputChange,
+  onClearSearch,
 }: {
+  projectId: string;
+  exportId: string;
+  selectedExport: CanecoExport;
   detail: CanecoExportDetail | null;
   isLoading: boolean;
   page: number;
+  perPage: PageSize;
+  search: string;
+  searchInput: string;
   onPageChange: (p: number) => void;
+  onPerPageChange: (pp: PageSize) => void;
+  onSearchSubmit: (e: React.FormEvent) => void;
+  onSearchInputChange: (v: string) => void;
+  onClearSearch: () => void;
 }) {
-  if (isLoading) {
-    return (
-      <div className="mt-4 border border-border-std rounded bg-white p-8 text-center text-sm text-text-tertiary">
-        Chargement des données...
-      </div>
-    );
-  }
+  const total = detail?.total ?? 0;
+  const total_pages = detail?.total_pages ?? 1;
+  const rangeStart = total === 0 ? 0 : (page - 1) * perPage + 1;
+  const rangeEnd = Math.min(page * perPage, total);
 
-  if (!detail) return null;
+  // Ligne de metadonnees
+  const meta = selectedExport.status === "parsed"
+    ? `${selectedExport.file_name} — ${selectedExport.lines_read ?? 0} lignes lues, ${selectedExport.line_count ?? 0} parsees, ${selectedExport.columns_mapped ?? 0}/${selectedExport.columns_detected ?? 23} colonnes standard mappees, ${selectedExport.extra_columns_count ?? 0} colonne(s) supplementaire(s) — ${formatDateTime(selectedExport.uploaded_at)}`
+    : null;
 
-  const { lines, total, total_pages } = detail;
+  const hasParseDiscrepancy =
+    selectedExport.lines_read !== null &&
+    selectedExport.line_count !== null &&
+    selectedExport.lines_read !== selectedExport.line_count;
 
   return (
-    <div className="mt-4 border border-border-std rounded bg-white overflow-hidden">
-      {/* En-tête du tableau */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border-std bg-bg-cell">
-        <p className="text-xs font-semibold text-text-secondary">
-          {total} départ{total > 1 ? "s" : ""} — indice{" "}
-          <span className="font-mono">{detail.export.indice}</span>
+    <div className="mt-2 space-y-2">
+      {/* Ligne de metadonnees import */}
+      {meta && (
+        <p
+          className={cn(
+            "text-xs px-1",
+            hasParseDiscrepancy ? "text-orange-600" : "text-text-tertiary"
+          )}
+        >
+          {meta}
+          {hasParseDiscrepancy && (
+            <button className="ml-2 underline hover:no-underline">
+              Voir le detail des erreurs
+            </button>
+          )}
         </p>
-        {total_pages > 1 && (
-          <div className="flex items-center gap-2">
+      )}
+
+      {/* Barre recherche + pagination haute */}
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-white border border-border-std rounded px-3 py-2">
+        {/* Recherche */}
+        <form onSubmit={onSearchSubmit} className="flex items-center gap-1.5 min-w-0">
+          <div className="relative flex items-center">
+            <Search size={13} className="absolute left-2 text-text-tertiary pointer-events-none" />
+            <input
+              type="text"
+              value={searchInput}
+              onChange={(e) => onSearchInputChange(e.target.value)}
+              placeholder="Recherche libre..."
+              className="pl-7 pr-7 py-1 text-xs border border-border-std rounded focus:outline-none focus:border-vinci-blue w-48"
+            />
+            {searchInput && (
+              <button
+                type="button"
+                onClick={onClearSearch}
+                className="absolute right-2 text-text-tertiary hover:text-text-primary"
+              >
+                <X size={12} />
+              </button>
+            )}
+          </div>
+          <button
+            type="submit"
+            className="px-2 py-1 text-xs bg-vinci-blue text-white rounded hover:bg-vinci-blue/90 transition-colors"
+          >
+            Ok
+          </button>
+          {search && (
             <span className="text-xs text-text-tertiary">
-              Page {page} / {total_pages}
+              Filtre actif : <span className="font-medium text-text-primary">"{search}"</span>
             </span>
-            <button
-              onClick={() => onPageChange(Math.max(1, page - 1))}
+          )}
+        </form>
+
+        {/* Compteur + pagination */}
+        <div className="flex items-center gap-3 shrink-0">
+          <span className="text-xs text-text-tertiary">
+            {total} ligne{total !== 1 ? "s" : ""} — page {page} sur {total_pages} — affichage {rangeStart} a {rangeEnd}
+          </span>
+
+          <div className="flex items-center gap-1">
+            <label className="text-xs text-text-tertiary">Lignes :</label>
+            <select
+              value={perPage}
+              onChange={(e) => onPerPageChange(Number(e.target.value) as PageSize)}
+              className="text-xs border border-border-std rounded px-1 py-0.5 bg-white focus:outline-none focus:border-vinci-blue"
+            >
+              {PAGE_SIZES.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex items-center gap-0.5">
+            <PageBtn
+              icon={<ChevronFirst size={13} />}
+              onClick={() => onPageChange(1)}
               disabled={page <= 1}
-              className="p-1 rounded border border-border-std hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            >
-              <ChevronLeft size={14} />
-            </button>
-            <button
-              onClick={() => onPageChange(Math.min(total_pages, page + 1))}
+              title="Premiere page"
+            />
+            <PageBtn
+              icon={<ChevronLeft size={13} />}
+              onClick={() => onPageChange(page - 1)}
+              disabled={page <= 1}
+              title="Page precedente"
+            />
+            <PageBtn
+              icon={<ChevronRight size={13} />}
+              onClick={() => onPageChange(page + 1)}
               disabled={page >= total_pages}
-              className="p-1 rounded border border-border-std hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            >
-              <ChevronRight size={14} />
-            </button>
+              title="Page suivante"
+            />
+            <PageBtn
+              icon={<ChevronLast size={13} />}
+              onClick={() => onPageChange(total_pages)}
+              disabled={page >= total_pages}
+              title="Derniere page"
+            />
+          </div>
+
+          {/* Export Excel */}
+          <ExcelExportBtn
+            projectId={projectId}
+            exportId={exportId}
+            indice={selectedExport.indice}
+          />
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="border border-border-std rounded overflow-hidden">
+        {isLoading ? (
+          <div className="p-8 text-center text-sm text-text-tertiary">
+            Chargement des donnees...
+          </div>
+        ) : !detail || detail.lines.length === 0 ? (
+          <div className="p-8 text-center text-sm text-text-tertiary">
+            {search ? `Aucun resultat pour "${search}".` : "Aucune ligne."}
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs border-collapse">
+              <thead>
+                <tr>
+                  {/* Colonne # sticky */}
+                  <th
+                    className="sticky left-0 z-10 px-3 py-2 text-left font-medium text-white text-xs whitespace-nowrap border-r border-white/10"
+                    style={{ background: "#001E50", minWidth: "48px" }}
+                  >
+                    #
+                  </th>
+                  {COLUMNS.map((col) => (
+                    <th
+                      key={col.key}
+                      className={cn(
+                        "px-3 py-2 text-left font-medium text-white text-xs whitespace-nowrap border-r border-white/10 last:border-r-0",
+                        col.width
+                      )}
+                      style={{ background: "#001E50" }}
+                    >
+                      {col.label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {detail.lines.map((line, rowIdx) => (
+                  <tr
+                    key={line.id}
+                    className={cn(
+                      "border-b border-slate-200 hover:bg-slate-100 transition-colors",
+                      rowIdx % 2 === 0 ? "bg-white" : "bg-slate-50"
+                    )}
+                  >
+                    {/* Cellule # sticky */}
+                    <td
+                      className={cn(
+                        "sticky left-0 z-10 px-3 py-1.5 font-mono text-text-tertiary border-r border-slate-200",
+                        rowIdx % 2 === 0 ? "bg-white" : "bg-slate-50"
+                      )}
+                    >
+                      {line.excel_row_number ?? line.row_index + 2}
+                    </td>
+
+                    {COLUMNS.map((col) => (
+                      <DataCell key={col.key} line={line} col={col} />
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
 
-      {/* Table */}
-      <div className="overflow-x-auto">
-        <table className="w-full text-xs">
-          <thead>
-            <tr className="border-b border-border-std bg-bg-cell/50">
-              {COLUMNS.map((col) => (
-                <th
-                  key={col.key}
-                  className="text-left px-3 py-2 text-text-tertiary font-medium whitespace-nowrap"
-                >
-                  {col.label}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border-std">
-            {lines.map((line) => (
-              <tr key={line.id} className="hover:bg-bg-light transition-colors">
-                {COLUMNS.map((col) => {
-                  const val = line[col.key];
-                  const display =
-                    val === null || val === undefined
-                      ? <span className="text-text-tertiary">—</span>
-                      : typeof val === "number"
-                      ? formatNum(val)
-                      : String(val);
-                  return (
-                    <td
-                      key={col.key}
-                      className={cn("px-3 py-2 whitespace-nowrap text-text-primary", col.cls)}
-                    >
-                      {display}
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {/* Pagination basse */}
+      {detail && total_pages > 1 && (
+        <div className="flex justify-center items-center gap-1 pt-1">
+          <PageBtn
+            icon={<ChevronFirst size={13} />}
+            onClick={() => onPageChange(1)}
+            disabled={page <= 1}
+            title="Premiere page"
+          />
+          <PageBtn
+            icon={<ChevronLeft size={13} />}
+            onClick={() => onPageChange(page - 1)}
+            disabled={page <= 1}
+            title="Page precedente"
+          />
+          <span className="text-xs text-text-tertiary px-2">
+            {page} / {total_pages}
+          </span>
+          <PageBtn
+            icon={<ChevronRight size={13} />}
+            onClick={() => onPageChange(page + 1)}
+            disabled={page >= total_pages}
+            title="Page suivante"
+          />
+          <PageBtn
+            icon={<ChevronLast size={13} />}
+            onClick={() => onPageChange(total_pages)}
+            disabled={page >= total_pages}
+            title="Derniere page"
+          />
+        </div>
+      )}
     </div>
   );
 }
 
-function formatNum(n: number): string {
-  if (Number.isInteger(n)) return String(n);
-  return n.toLocaleString("fr-FR", { maximumFractionDigits: 2 });
+// ---------------------------------------------------------------------------
+// Cellule de donnee avec indicateur valeur brute non normalisee
+// ---------------------------------------------------------------------------
+
+function DataCell({ line, col }: { line: CanecoLine; col: ColDef }) {
+  const value = line[col.key];
+  const rawOnly = isRawOnly(line, col.key);
+  const rawVal = rawOnly ? getRawValue(line, col.key) : "";
+
+  if (rawOnly) {
+    return (
+      <td
+        className="px-3 py-1.5 whitespace-nowrap border-l-2 border-l-red-400"
+        title="Valeur brute non normalisee"
+      >
+        <span className="italic text-text-tertiary">{rawVal}</span>
+      </td>
+    );
+  }
+
+  if (value === null || value === undefined) {
+    return (
+      <td className="px-3 py-1.5 whitespace-nowrap">
+        <span className="text-slate-300">—</span>
+      </td>
+    );
+  }
+
+  return (
+    <td
+      className={cn(
+        "px-3 py-1.5 whitespace-nowrap text-text-primary",
+        col.numeric && "font-mono"
+      )}
+    >
+      {typeof value === "number" ? formatNum(value) : String(value)}
+    </td>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Bouton export Excel
+// ---------------------------------------------------------------------------
+
+function ExcelExportBtn({
+  projectId,
+  exportId,
+  indice,
+}: {
+  projectId: string;
+  exportId: string;
+  indice: string;
+}) {
+  const { mutate, isPending } = useMutation({
+    mutationFn: () => downloadCanecoExcel(projectId, exportId, indice),
+  });
+
+  return (
+    <button
+      onClick={() => mutate()}
+      disabled={isPending}
+      className="flex items-center gap-1 px-2 py-1 text-xs border border-border-std rounded hover:bg-bg-cell transition-colors text-text-secondary disabled:opacity-50"
+      title="Exporter en Excel"
+    >
+      <Download size={12} />
+      {isPending ? "..." : "Excel"}
+    </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Bouton de pagination
+// ---------------------------------------------------------------------------
+
+function PageBtn({
+  icon,
+  onClick,
+  disabled,
+  title,
+}: {
+  icon: React.ReactNode;
+  onClick: () => void;
+  disabled: boolean;
+  title: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      className="p-1 rounded border border-border-std hover:bg-bg-cell disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+    >
+      {icon}
+    </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Modal modification indice
+// ---------------------------------------------------------------------------
+
+function IndiceModal({
+  currentIndice,
+  onSave,
+  onClose,
+}: {
+  currentIndice: string;
+  onSave: (indice: string) => void;
+  onClose: () => void;
+}) {
+  const [value, setValue] = useState(currentIndice);
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded w-full max-w-xs shadow-lg p-5">
+        <h3 className="font-semibold text-text-primary mb-3">Modifier l'indice</h3>
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => setValue(e.target.value.toUpperCase())}
+          maxLength={10}
+          placeholder="ex. A, B, B2, C..."
+          className="w-full border border-border-std rounded px-3 py-2 text-sm font-mono uppercase focus:outline-none focus:border-vinci-blue mb-4"
+          autoFocus
+        />
+        <div className="flex gap-3 justify-end">
+          <button
+            onClick={onClose}
+            className="px-3 py-2 text-sm text-text-secondary border border-border-std rounded hover:bg-bg-cell transition-colors"
+          >
+            Annuler
+          </button>
+          <button
+            onClick={() => { if (value.trim()) onSave(value.trim()); }}
+            disabled={!value.trim()}
+            className="px-3 py-2 text-sm bg-vinci-blue text-white rounded hover:bg-vinci-blue/90 transition-colors disabled:opacity-50"
+          >
+            Enregistrer
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -726,6 +1178,7 @@ function UploadForm({
 }) {
   const [file, setFile] = useState<File | null>(null);
   const [indice, setIndice] = useState("A");
+  const [indiceDetected, setIndiceDetected] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -744,7 +1197,7 @@ function UploadForm({
   const handleFile = useCallback((f: File) => {
     const ext = f.name.split(".").pop()?.toLowerCase();
     if (!["xls", "xlsx"].includes(ext ?? "")) {
-      setError("Format non supporté. Utilisez un fichier .xls ou .xlsx.");
+      setError("Format non supporte. Utilisez un fichier .xls ou .xlsx.");
       return;
     }
     if (f.size > 50 * 1024 * 1024) {
@@ -753,6 +1206,13 @@ function UploadForm({
     }
     setFile(f);
     setError(null);
+    const detected = detectIndiceFromFilename(f.name);
+    if (detected) {
+      setIndice(detected);
+      setIndiceDetected(true);
+    } else {
+      setIndiceDetected(false);
+    }
   }, []);
 
   const handleDrop = useCallback(
@@ -768,7 +1228,7 @@ function UploadForm({
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!file) {
-      setError("Veuillez sélectionner un fichier.");
+      setError("Veuillez selectionner un fichier.");
       return;
     }
     if (!indice.trim()) {
@@ -781,7 +1241,9 @@ function UploadForm({
 
   return (
     <div className="border border-border-std rounded bg-white p-5">
-      <h4 className="text-sm font-semibold text-text-primary mb-4">Importer un export CANECO BT</h4>
+      <h4 className="text-sm font-semibold text-text-primary mb-4">
+        Importer un export CANECO BT
+      </h4>
 
       <form onSubmit={handleSubmit} className="space-y-4">
         {/* Zone drag & drop */}
@@ -811,10 +1273,7 @@ function UploadForm({
           />
           <FileSpreadsheet
             size={32}
-            className={cn(
-              "mx-auto mb-2",
-              file ? "text-green-600" : "text-text-tertiary"
-            )}
+            className={cn("mx-auto mb-2", file ? "text-green-600" : "text-text-tertiary")}
           />
           {file ? (
             <div>
@@ -825,9 +1284,7 @@ function UploadForm({
             </div>
           ) : (
             <div>
-              <p className="text-sm text-text-secondary">
-                Glissez votre fichier XLS/XLSX ici
-              </p>
+              <p className="text-sm text-text-secondary">Glissez votre fichier XLS/XLSX ici</p>
               <p className="text-xs text-text-tertiary mt-1">ou cliquez pour parcourir</p>
             </div>
           )}
@@ -836,22 +1293,31 @@ function UploadForm({
         {/* Indice */}
         <div className="flex items-center gap-3">
           <label className="text-sm text-text-secondary shrink-0 w-32">
-            Indice de révision
+            Indice de revision
           </label>
-          <input
-            type="text"
-            value={indice}
-            onChange={(e) => setIndice(e.target.value.toUpperCase())}
-            maxLength={10}
-            placeholder="A"
-            className="w-24 border border-border-std rounded px-3 py-2 text-sm font-mono uppercase focus:outline-none focus:border-vinci-blue"
-          />
-          <span className="text-xs text-text-tertiary">
-            ex. A, B, B2, C…
-          </span>
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={indice}
+              onChange={(e) => { setIndice(e.target.value.toUpperCase()); setIndiceDetected(false); }}
+              maxLength={10}
+              placeholder="A"
+              className={cn(
+                "w-24 border rounded px-3 py-2 text-sm font-mono uppercase focus:outline-none",
+                indiceDetected
+                  ? "border-green-400 focus:border-green-500"
+                  : "border-border-std focus:border-vinci-blue"
+              )}
+            />
+            {file && !indice.trim() && (
+              <span className="text-xs text-orange-600">Indice non detecte — saisir manuellement</span>
+            )}
+            {indiceDetected && (
+              <span className="text-xs text-status-ok">Detecte depuis le nom du fichier</span>
+            )}
+          </div>
         </div>
 
-        {/* Erreur */}
         {error && (
           <div className="flex items-start gap-2 text-xs text-status-warn bg-red-50 border border-red-200 rounded px-3 py-2">
             <span className="mt-0.5 shrink-0">&#9888;</span>
@@ -859,7 +1325,6 @@ function UploadForm({
           </div>
         )}
 
-        {/* Boutons */}
         <div className="flex gap-3 justify-end">
           <button
             type="button"
@@ -893,18 +1358,16 @@ function UploadForm({
 }
 
 // ---------------------------------------------------------------------------
-// État vide
+// Etat vide
 // ---------------------------------------------------------------------------
 
 function EmptyState({ onUpload }: { onUpload: () => void }) {
   return (
     <div className="border-2 border-dashed border-border-std rounded p-12 text-center">
       <FileSpreadsheet size={40} className="mx-auto mb-3 text-text-tertiary" />
-      <p className="text-sm font-medium text-text-primary mb-1">
-        Aucun export CANECO importé
-      </p>
+      <p className="text-sm font-medium text-text-primary mb-1">Aucun export CANECO importe</p>
       <p className="text-xs text-text-tertiary mb-4">
-        Importez votre fichier export CANECO BT (.xls ou .xlsx) pour visualiser les départs.
+        Importez votre fichier export CANECO BT (.xls ou .xlsx) pour visualiser les departs.
       </p>
       <button
         onClick={onUpload}
