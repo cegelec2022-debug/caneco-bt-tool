@@ -14,19 +14,19 @@ _DEMO_USERS = [
     {
         "email": "be@actemium.fr",
         "password": "Demo2026!",
-        "full_name": "Mouhcine Benali",
+        "full_name": "Mouhcine Zekraoui",
         "role": UserRole.BE,
     },
     {
         "email": "chef@actemium.fr",
         "password": "Demo2026!",
-        "full_name": "Mouad Alami",
+        "full_name": "Mouad",
         "role": UserRole.CHEF_CHANTIER,
     },
     {
         "email": "ra@actemium.fr",
         "password": "Demo2026!",
-        "full_name": "Jibrane Mansouri",
+        "full_name": "Mariam Jibrane",
         "role": UserRole.RA,
     },
 ]
@@ -40,20 +40,24 @@ def run_seed() -> None:
         for u in _DEMO_USERS:
             existing = user_repository.get_by_email(db, u["email"])
             if not existing:
-                created = user_repository.create(
+                user = user_repository.create(
                     db,
                     email=u["email"],
                     password=u["password"],
                     full_name=u["full_name"],
                     role=u["role"],
                 )
-                logger.info(f"Utilisateur créé : {created.email} ({created.role})")
-                if u["role"] == UserRole.ADMIN:
-                    admin = created
+                logger.info(f"Utilisateur créé : {user.email} ({user.role})")
             else:
-                logger.info(f"Utilisateur déjà présent : {existing.email}")
-                if existing.role == UserRole.ADMIN:
-                    admin = existing
+                if existing.full_name != u["full_name"]:
+                    existing.full_name = u["full_name"]
+                    db.commit()
+                    logger.info(f"Nom mis à jour : {existing.email} → {existing.full_name}")
+                else:
+                    logger.info(f"Utilisateur déjà présent : {existing.email}")
+                user = existing
+            if u["role"] == UserRole.ADMIN:
+                admin = user
 
         # Projet pilote DACHSER
         if admin and not project_repository.get_by_code(db, "DACHSER-L3"):
