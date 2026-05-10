@@ -245,13 +245,16 @@ def _read_xls(file_path: Path) -> list[list[object]]:
         row: list[object] = []
         for c in range(ws.ncols):
             cell = ws.cell(r, c)
-            # xlrd type 2 = float
-            if cell.ctype == xlrd.XL_CELL_FLOAT:
-                row.append(cell.value)
-            elif cell.ctype == xlrd.XL_CELL_EMPTY:
+            # ctype 0=empty, 1=text, 2=number, 3=date, 4=bool, 5=error
+            if cell.ctype == 0:  # empty
                 row.append(None)
+            elif cell.ctype == 2:  # number (int or float)
+                row.append(cell.value)
+            elif cell.ctype == 3:  # date — garder comme nombre brut
+                row.append(cell.value)
             else:
-                row.append(str(cell.value).strip() if cell.value != "" else None)
+                text = str(cell.value).strip()
+                row.append(text if text else None)
         rows.append(row)
     return rows
 
