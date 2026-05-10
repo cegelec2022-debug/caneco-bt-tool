@@ -93,7 +93,6 @@ function formatNum(n: number): string {
   return n.toLocaleString("fr-FR", { maximumFractionDigits: 3 });
 }
 
-/** Detecte l'indice depuis le nom du fichier (client-side, meme regex que le backend). */
 function detectIndiceFromFilename(filename: string): string | null {
   const m = filename.toUpperCase().match(/INDICE[_\s]+([A-Z][0-9]*)/);
   if (m) return m[1];
@@ -102,7 +101,6 @@ function detectIndiceFromFilename(filename: string): string | null {
   return null;
 }
 
-/** Verifie si la valeur normalisee differe de la valeur brute (non normalisee). */
 function isRawOnly(line: CanecoLine, fieldKey: keyof CanecoLine): boolean {
   const value = line[fieldKey];
   if (value !== null && value !== undefined) return false;
@@ -205,8 +203,8 @@ export default function ProjectPage() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* En-tete projet */}
-      <div className="px-6 py-4 border-b border-border-std bg-white">
+      {/* En-tete projet — epingle, ne scrolle jamais */}
+      <div className="shrink-0 px-6 py-4 border-b border-border-std bg-white">
         <button
           onClick={() => navigate("/projects")}
           className="flex items-center gap-1 text-xs text-text-tertiary hover:text-text-primary mb-3 transition-colors"
@@ -259,8 +257,8 @@ export default function ProjectPage() {
         </div>
       </div>
 
-      {/* Onglets */}
-      <div className="border-b border-border-std bg-white px-6">
+      {/* Onglets — epingles, ne scrollent jamais */}
+      <div className="shrink-0 border-b border-border-std bg-white px-6">
         <div className="flex gap-0">
           {TABS.map((tab) => (
             <button
@@ -279,32 +277,34 @@ export default function ProjectPage() {
         </div>
       </div>
 
-      {/* Contenu onglets */}
-      <div className="flex-1 overflow-auto p-6">
+      {/* Contenu onglets — zone de defilement independante par onglet */}
+      <div className="flex-1 min-h-0 overflow-hidden">
         {activeTab === "overview" && (
-          <div className="max-w-lg space-y-4">
-            <div className="bg-white border border-border-std rounded p-4">
-              <h3 className="text-xs font-semibold text-text-tertiary uppercase tracking-wide mb-3">
-                Informations projet
-              </h3>
-              <dl className="space-y-2.5 text-sm">
-                <Row label="Code" value={<span className="font-mono">{project.code}</span>} />
-                <Row label="Nom" value={project.name} />
-                {project.client && <Row label="Client" value={project.client} />}
-                {project.agency && <Row label="Agence" value={project.agency} />}
-                {project.description && <Row label="Description" value={project.description} />}
-                <Row label="Statut" value={project.status} />
-              </dl>
-            </div>
+          <div className="h-full overflow-auto p-6">
+            <div className="max-w-lg space-y-4">
+              <div className="bg-white border border-border-std rounded p-4">
+                <h3 className="text-xs font-semibold text-text-tertiary uppercase tracking-wide mb-3">
+                  Informations projet
+                </h3>
+                <dl className="space-y-2.5 text-sm">
+                  <Row label="Code" value={<span className="font-mono">{project.code}</span>} />
+                  <Row label="Nom" value={project.name} />
+                  {project.client && <Row label="Client" value={project.client} />}
+                  {project.agency && <Row label="Agence" value={project.agency} />}
+                  {project.description && <Row label="Description" value={project.description} />}
+                  <Row label="Statut" value={project.status} />
+                </dl>
+              </div>
 
-            <div className="bg-white border border-border-std rounded p-4">
-              <h3 className="text-xs font-semibold text-text-tertiary uppercase tracking-wide mb-3">
-                Historique
-              </h3>
-              <dl className="space-y-2.5 text-sm">
-                <Row label="Cree le" value={formatDate(project.created_at)} />
-                <Row label="Modifie le" value={formatDate(project.updated_at)} />
-              </dl>
+              <div className="bg-white border border-border-std rounded p-4">
+                <h3 className="text-xs font-semibold text-text-tertiary uppercase tracking-wide mb-3">
+                  Historique
+                </h3>
+                <dl className="space-y-2.5 text-sm">
+                  <Row label="Cree le" value={formatDate(project.created_at)} />
+                  <Row label="Modifie le" value={formatDate(project.updated_at)} />
+                </dl>
+              </div>
             </div>
           </div>
         )}
@@ -312,18 +312,22 @@ export default function ProjectPage() {
         {activeTab === "studies" && <EtudesTab projectId={id!} />}
 
         {activeTab === "tableaux" && (
-          <div className="text-sm text-text-tertiary">
-            Module 3 — Bordereau / CPS / Verification (disponible en V1.1)
+          <div className="h-full overflow-auto p-6">
+            <div className="text-sm text-text-tertiary">
+              Module 3 — Bordereau / CPS / Verification (disponible en V1.1)
+            </div>
           </div>
         )}
         {activeTab === "doe" && (
-          <div className="text-sm text-text-tertiary">
-            Module 5 — Generation DOE (disponible en V1.1)
+          <div className="h-full overflow-auto p-6">
+            <div className="text-sm text-text-tertiary">
+              Module 5 — Generation DOE (disponible en V1.1)
+            </div>
           </div>
         )}
       </div>
 
-      {/* Modal modifier */}
+      {/* Modal modifier projet */}
       {showEdit && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded w-full max-w-md shadow-lg">
@@ -523,90 +527,105 @@ function EtudesTab({ projectId }: { projectId: string }) {
   }
 
   if (loadingExports) {
-    return <div className="text-sm text-text-tertiary">Chargement...</div>;
+    return <div className="p-6 text-sm text-text-tertiary">Chargement...</div>;
   }
 
   const hasExports = exports && exports.length > 0;
   const selectedExport = exports?.find((e) => e.id === selectedExportId) ?? null;
+  const hasTable = !!selectedExportId && !!selectedExport;
 
   return (
-    <div className="space-y-4">
-      {/* Barre d'actions */}
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-text-primary">
-          Etudes CANECO BT
-          {hasExports && (
-            <span className="ml-2 text-xs font-normal text-text-tertiary">
-              {exports.length} import{exports.length > 1 ? "s" : ""}
-            </span>
-          )}
-        </h3>
-        <button
-          onClick={() => {
-            setShowUpload((v) => !v);
-            setSelectedExportId(null);
-          }}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-vinci-blue text-white rounded hover:bg-vinci-blue/90 transition-colors"
-        >
-          <Upload size={13} />
-          Importer un fichier CANECO
-        </button>
+    <div className="flex flex-col h-full">
+      {/* Zone haute : actions + cartes d'import
+          - Sans table ouverte : defilement libre (flex-1 overflow-auto)
+          - Avec table ouverte : taille fixe et epinglee en haut (shrink-0) */}
+      <div
+        className={cn(
+          "px-6 pt-4 space-y-3",
+          hasTable
+            ? "shrink-0 pb-3 border-b border-border-std bg-white"
+            : "flex-1 min-h-0 overflow-auto pb-6"
+        )}
+      >
+        {/* Barre d'actions */}
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-text-primary">
+            Etudes CANECO BT
+            {hasExports && (
+              <span className="ml-2 text-xs font-normal text-text-tertiary">
+                {exports.length} import{exports.length > 1 ? "s" : ""}
+              </span>
+            )}
+          </h3>
+          <button
+            onClick={() => {
+              setShowUpload((v) => !v);
+              setSelectedExportId(null);
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-vinci-blue text-white rounded hover:bg-vinci-blue/90 transition-colors"
+          >
+            <Upload size={13} />
+            Importer un fichier CANECO
+          </button>
+        </div>
+
+        {/* Formulaire upload */}
+        {showUpload && (
+          <UploadForm
+            projectId={projectId}
+            onDone={(newExport) => {
+              queryClient.invalidateQueries({ queryKey: ["caneco", projectId] });
+              setShowUpload(false);
+              setSelectedExportId(newExport.id);
+              setPage(1);
+            }}
+            onCancel={() => setShowUpload(false)}
+          />
+        )}
+
+        {/* Etat vide */}
+        {!hasExports && !showUpload && (
+          <EmptyState onUpload={() => setShowUpload(true)} />
+        )}
+
+        {/* Liste des imports — scroll interne si table ouverte et beaucoup de cartes */}
+        {hasExports && (
+          <div className={cn("grid grid-cols-1 gap-2", hasTable && "max-h-36 overflow-y-auto")}>
+            {exports.map((exp, idx) => (
+              <ExportCard
+                key={exp.id}
+                exp={exp}
+                isFirst={idx === 0}
+                isSelected={selectedExportId === exp.id}
+                onSelect={() => handleSelectExport(exp)}
+                onDelete={() => setConfirmDeleteId(exp.id)}
+                onEditIndice={() => setEditIndiceId(exp.id)}
+              />
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* Zone upload */}
-      {showUpload && (
-        <UploadForm
-          projectId={projectId}
-          onDone={(newExport) => {
-            queryClient.invalidateQueries({ queryKey: ["caneco", projectId] });
-            setShowUpload(false);
-            setSelectedExportId(newExport.id);
-            setPage(1);
-          }}
-          onCancel={() => setShowUpload(false)}
-        />
-      )}
-
-      {/* Etat vide */}
-      {!hasExports && !showUpload && (
-        <EmptyState onUpload={() => setShowUpload(true)} />
-      )}
-
-      {/* Liste des imports */}
-      {hasExports && (
-        <div className="grid grid-cols-1 gap-2">
-          {exports.map((exp, idx) => (
-            <ExportCard
-              key={exp.id}
-              exp={exp}
-              isFirst={idx === 0}
-              isSelected={selectedExportId === exp.id}
-              onSelect={() => handleSelectExport(exp)}
-              onDelete={() => setConfirmDeleteId(exp.id)}
-              onEditIndice={() => setEditIndiceId(exp.id)}
-            />
-          ))}
+      {/* Zone tableau : prend toute la hauteur restante avec son propre defilement */}
+      {hasTable && (
+        <div className="flex-1 min-h-0 px-6 pb-4 flex flex-col pt-3">
+          <LinesTable
+            projectId={projectId}
+            exportId={selectedExportId}
+            selectedExport={selectedExport}
+            detail={detail ?? null}
+            isLoading={loadingDetail}
+            page={page}
+            perPage={perPage}
+            search={search}
+            searchInput={searchInput}
+            onPageChange={(p) => setPage(p)}
+            onPerPageChange={(pp) => { setPerPage(pp); setPage(1); }}
+            onSearchSubmit={handleSearch}
+            onSearchInputChange={setSearchInput}
+            onClearSearch={handleClearSearch}
+          />
         </div>
-      )}
-
-      {/* Tableau des lignes */}
-      {selectedExportId && selectedExport && (
-        <LinesTable
-          projectId={projectId}
-          exportId={selectedExportId}
-          selectedExport={selectedExport}
-          detail={detail ?? null}
-          isLoading={loadingDetail}
-          page={page}
-          perPage={perPage}
-          search={search}
-          searchInput={searchInput}
-          onPageChange={(p) => setPage(p)}
-          onPerPageChange={(pp) => { setPerPage(pp); setPage(1); }}
-          onSearchSubmit={handleSearch}
-          onSearchInputChange={setSearchInput}
-          onClearSearch={handleClearSearch}
-        />
       )}
 
       {/* Modal suppression export */}
@@ -755,7 +774,7 @@ function ExportCard({
 }
 
 // ---------------------------------------------------------------------------
-// Tableau des lignes
+// Tableau des lignes avec en-tetes epingles
 // ---------------------------------------------------------------------------
 
 function LinesTable({
@@ -794,9 +813,8 @@ function LinesTable({
   const rangeStart = total === 0 ? 0 : (page - 1) * perPage + 1;
   const rangeEnd = Math.min(page * perPage, total);
 
-  // Ligne de metadonnees
   const meta = selectedExport.status === "parsed"
-    ? `${selectedExport.file_name} — ${selectedExport.lines_read ?? 0} lignes lues, ${selectedExport.line_count ?? 0} parsees, ${selectedExport.columns_mapped ?? 0}/${selectedExport.columns_detected ?? 23} colonnes standard mappees, ${selectedExport.extra_columns_count ?? 0} colonne(s) supplementaire(s) — ${formatDateTime(selectedExport.uploaded_at)}`
+    ? `${selectedExport.file_name} — ${selectedExport.lines_read ?? 0} lignes lues, ${selectedExport.line_count ?? 0} parsees, ${selectedExport.columns_mapped ?? 0}/${selectedExport.columns_detected ?? 23} colonnes standard mappees, ${selectedExport.extra_columns_count ?? 0} col. suppl. — ${formatDateTime(selectedExport.uploaded_at)}`
     : null;
 
   const hasParseDiscrepancy =
@@ -805,12 +823,12 @@ function LinesTable({
     selectedExport.lines_read !== selectedExport.line_count;
 
   return (
-    <div className="mt-2 space-y-2">
-      {/* Ligne de metadonnees import */}
+    <div className="flex flex-col h-full gap-2">
+      {/* Ligne de metadonnees — taille fixe */}
       {meta && (
         <p
           className={cn(
-            "text-xs px-1",
+            "shrink-0 text-xs px-1",
             hasParseDiscrepancy ? "text-orange-600" : "text-text-tertiary"
           )}
         >
@@ -823,8 +841,8 @@ function LinesTable({
         </p>
       )}
 
-      {/* Barre recherche + pagination haute */}
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-white border border-border-std rounded px-3 py-2">
+      {/* Barre recherche + pagination — epinglee au-dessus du tableau */}
+      <div className="shrink-0 flex flex-wrap items-center justify-between gap-3 bg-white border border-border-std rounded px-3 py-2">
         {/* Recherche */}
         <form onSubmit={onSearchSubmit} className="flex items-center gap-1.5 min-w-0">
           <div className="relative flex items-center">
@@ -854,7 +872,7 @@ function LinesTable({
           </button>
           {search && (
             <span className="text-xs text-text-tertiary">
-              Filtre actif : <span className="font-medium text-text-primary">"{search}"</span>
+              Filtre : <span className="font-medium text-text-primary">"{search}"</span>
             </span>
           )}
         </form>
@@ -862,7 +880,7 @@ function LinesTable({
         {/* Compteur + pagination */}
         <div className="flex items-center gap-3 shrink-0">
           <span className="text-xs text-text-tertiary">
-            {total} ligne{total !== 1 ? "s" : ""} — page {page} sur {total_pages} — affichage {rangeStart} a {rangeEnd}
+            {total} ligne{total !== 1 ? "s" : ""} — page {page}/{total_pages} — {rangeStart}–{rangeEnd}
           </span>
 
           <div className="flex items-center gap-1">
@@ -907,7 +925,6 @@ function LinesTable({
             />
           </div>
 
-          {/* Export Excel */}
           <ExcelExportBtn
             projectId={projectId}
             exportId={exportId}
@@ -916,8 +933,8 @@ function LinesTable({
         </div>
       </div>
 
-      {/* Table */}
-      <div className="border border-border-std rounded overflow-hidden">
+      {/* Conteneur du tableau — defilement independant (X et Y), prend toute la hauteur restante */}
+      <div className="flex-1 min-h-0 overflow-auto border border-border-std rounded">
         {isLoading ? (
           <div className="p-8 text-center text-sm text-text-tertiary">
             Chargement des donnees...
@@ -927,64 +944,78 @@ function LinesTable({
             {search ? `Aucun resultat pour "${search}".` : "Aucune ligne."}
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs border-collapse">
-              <thead>
-                <tr>
-                  {/* Colonne # sticky */}
+          <table className="w-full text-xs border-collapse">
+            <thead>
+              <tr>
+                {/* Cellule coin : epinglee en haut ET a gauche (z-index max) */}
+                <th
+                  className="px-3 py-2 text-left font-medium text-white text-xs whitespace-nowrap border-r border-white/10"
+                  style={{
+                    background: "#001E50",
+                    position: "sticky",
+                    top: 0,
+                    left: 0,
+                    zIndex: 30,
+                    minWidth: "48px",
+                    boxShadow: "2px 2px 0 rgba(0,0,0,0.08)",
+                  }}
+                >
+                  #
+                </th>
+                {/* En-tetes colonnes : epingles en haut, defilent horizontalement */}
+                {COLUMNS.map((col) => (
                   <th
-                    className="sticky left-0 z-10 px-3 py-2 text-left font-medium text-white text-xs whitespace-nowrap border-r border-white/10"
-                    style={{ background: "#001E50", minWidth: "48px" }}
-                  >
-                    #
-                  </th>
-                  {COLUMNS.map((col) => (
-                    <th
-                      key={col.key}
-                      className={cn(
-                        "px-3 py-2 text-left font-medium text-white text-xs whitespace-nowrap border-r border-white/10 last:border-r-0",
-                        col.width
-                      )}
-                      style={{ background: "#001E50" }}
-                    >
-                      {col.label}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {detail.lines.map((line, rowIdx) => (
-                  <tr
-                    key={line.id}
+                    key={col.key}
                     className={cn(
-                      "border-b border-slate-200 hover:bg-slate-100 transition-colors",
+                      "px-3 py-2 text-left font-medium text-white text-xs whitespace-nowrap border-r border-white/10 last:border-r-0",
+                      col.width
+                    )}
+                    style={{
+                      background: "#001E50",
+                      position: "sticky",
+                      top: 0,
+                      zIndex: 20,
+                      boxShadow: "0 2px 0 rgba(0,0,0,0.08)",
+                    }}
+                  >
+                    {col.label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {detail.lines.map((line, rowIdx) => (
+                <tr
+                  key={line.id}
+                  className={cn(
+                    "border-b border-slate-200 hover:bg-blue-50/40 transition-colors",
+                    rowIdx % 2 === 0 ? "bg-white" : "bg-slate-50"
+                  )}
+                >
+                  {/* Cellule # : epinglee a gauche dans le corps */}
+                  <td
+                    className={cn(
+                      "px-3 py-1.5 font-mono text-text-tertiary border-r border-slate-200",
                       rowIdx % 2 === 0 ? "bg-white" : "bg-slate-50"
                     )}
+                    style={{ position: "sticky", left: 0, zIndex: 10 }}
                   >
-                    {/* Cellule # sticky */}
-                    <td
-                      className={cn(
-                        "sticky left-0 z-10 px-3 py-1.5 font-mono text-text-tertiary border-r border-slate-200",
-                        rowIdx % 2 === 0 ? "bg-white" : "bg-slate-50"
-                      )}
-                    >
-                      {line.excel_row_number ?? line.row_index + 2}
-                    </td>
+                    {line.excel_row_number ?? line.row_index + 2}
+                  </td>
 
-                    {COLUMNS.map((col) => (
-                      <DataCell key={col.key} line={line} col={col} />
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                  {COLUMNS.map((col) => (
+                    <DataCell key={col.key} line={line} col={col} />
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
       </div>
 
-      {/* Pagination basse */}
+      {/* Pagination basse — taille fixe */}
       {detail && total_pages > 1 && (
-        <div className="flex justify-center items-center gap-1 pt-1">
+        <div className="shrink-0 flex justify-center items-center gap-1">
           <PageBtn
             icon={<ChevronFirst size={13} />}
             onClick={() => onPageChange(1)}
@@ -1246,7 +1277,6 @@ function UploadForm({
       </h4>
 
       <form onSubmit={handleSubmit} className="space-y-4">
-        {/* Zone drag & drop */}
         <div
           onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
           onDragLeave={() => setIsDragging(false)}
@@ -1290,7 +1320,6 @@ function UploadForm({
           )}
         </div>
 
-        {/* Indice */}
         <div className="flex items-center gap-3">
           <label className="text-sm text-text-secondary shrink-0 w-32">
             Indice de revision
