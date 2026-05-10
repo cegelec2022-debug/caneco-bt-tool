@@ -203,31 +203,26 @@ export default function ProjectPage() {
 
   return (
     <div className="flex-1 min-h-0 flex flex-col">
-      {/* En-tete projet — epingle, ne scrolle jamais */}
-      <div className="shrink-0 px-6 py-4 border-b border-border-std bg-white">
-        <button
-          onClick={() => navigate("/projects")}
-          className="flex items-center gap-1 text-xs text-text-tertiary hover:text-text-primary mb-3 transition-colors"
-        >
-          <ChevronLeft size={14} />
-          Projets
-        </button>
-
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <span className="text-xs font-mono text-text-tertiary">{project.code}</span>
-            <h2 className="text-lg font-semibold text-text-primary mt-0.5 truncate">
-              {project.name}
-            </h2>
+      {/* En-tete projet — compact, epingle */}
+      <div className="shrink-0 px-6 py-2 border-b border-border-std bg-white">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3 min-w-0">
+            <button
+              onClick={() => navigate("/projects")}
+              className="flex items-center gap-1 text-xs text-text-tertiary hover:text-text-primary transition-colors shrink-0"
+            >
+              <ChevronLeft size={13} />
+              Projets
+            </button>
+            <span className="text-text-tertiary text-xs">/</span>
+            <span className="text-xs font-mono text-text-tertiary shrink-0">{project.code}</span>
+            <h2 className="text-sm font-semibold text-text-primary truncate">{project.name}</h2>
             {project.client && (
-              <p className="text-sm text-text-secondary">{project.client}</p>
+              <span className="text-xs text-text-tertiary truncate hidden sm:block">{project.client}</span>
             )}
-          </div>
-
-          <div className="flex items-center gap-2 shrink-0">
             <span
               className={cn(
-                "text-xs px-2 py-1 rounded",
+                "text-xs px-2 py-0.5 rounded shrink-0",
                 project.status === "actif" && "bg-green-100 text-status-ok",
                 project.status === "archive" && "bg-gray-100 text-text-tertiary",
                 project.status === "en_attente" && "bg-yellow-100 text-yellow-700",
@@ -237,21 +232,22 @@ export default function ProjectPage() {
             >
               {project.status}
             </span>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
             <button
               onClick={openEdit}
               title="Modifier le projet"
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-border-std rounded hover:bg-bg-cell transition-colors text-text-secondary"
+              className="flex items-center gap-1 px-2 py-1 text-xs border border-border-std rounded hover:bg-bg-cell transition-colors text-text-secondary"
             >
-              <Pencil size={13} />
+              <Pencil size={12} />
               Modifier
             </button>
             <button
               onClick={() => setShowDeleteConfirm(true)}
               title="Supprimer le projet"
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-red-200 rounded hover:bg-red-50 transition-colors text-status-warn"
+              className="flex items-center gap-1 px-2 py-1 text-xs border border-red-200 rounded hover:bg-red-50 transition-colors text-status-warn"
             >
-              <Trash2 size={13} />
-              Supprimer
+              <Trash2 size={12} />
             </button>
           </div>
         </div>
@@ -536,95 +532,129 @@ function EtudesTab({ projectId }: { projectId: string }) {
 
   return (
     <div className="flex-1 min-h-0 flex flex-col">
-      {/* Zone haute : actions + cartes d'import
-          - Sans table ouverte : defilement libre (flex-1 overflow-auto)
-          - Avec table ouverte : taille fixe et epinglee en haut (shrink-0) */}
-      <div
-        className={cn(
-          "px-6 pt-4 space-y-3",
-          hasTable
-            ? "shrink-0 pb-3 border-b border-border-std bg-white"
-            : "flex-1 min-h-0 overflow-auto pb-6"
-        )}
-      >
-        {/* Barre d'actions */}
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-text-primary">
-            Etudes CANECO BT
-            {hasExports && (
-              <span className="ml-2 text-xs font-normal text-text-tertiary">
-                {exports.length} import{exports.length > 1 ? "s" : ""}
+
+      {hasTable ? (
+        /* ── MODE TABLEAU OUVERT ─────────────────────────────────────────── */
+        <>
+          {/* Barre compacte 1 ligne : info fichier + actions */}
+          <div className="shrink-0 px-6 py-2 border-b border-border-std bg-white flex items-center justify-between gap-4">
+            <div className="flex items-center gap-2 min-w-0 text-xs">
+              <button
+                onClick={() => setSelectedExportId(null)}
+                className="flex items-center gap-1 text-text-tertiary hover:text-vinci-blue transition-colors shrink-0"
+              >
+                <ChevronLeft size={13} />
+                Imports
+              </button>
+              <span className="text-text-tertiary shrink-0">/</span>
+              <span className="font-semibold px-2 py-0.5 rounded bg-vinci-blue text-white shrink-0">
+                Indice {selectedExport.indice}
               </span>
-            )}
-          </h3>
-          <button
-            onClick={() => {
-              setShowUpload((v) => !v);
-              setSelectedExportId(null);
-            }}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-vinci-blue text-white rounded hover:bg-vinci-blue/90 transition-colors"
-          >
-            <Upload size={13} />
-            Importer un fichier CANECO
-          </button>
-        </div>
-
-        {/* Formulaire upload */}
-        {showUpload && (
-          <UploadForm
-            projectId={projectId}
-            onDone={(newExport) => {
-              queryClient.invalidateQueries({ queryKey: ["caneco", projectId] });
-              setShowUpload(false);
-              setSelectedExportId(newExport.id);
-              setPage(1);
-            }}
-            onCancel={() => setShowUpload(false)}
-          />
-        )}
-
-        {/* Etat vide */}
-        {!hasExports && !showUpload && (
-          <EmptyState onUpload={() => setShowUpload(true)} />
-        )}
-
-        {/* Liste des imports — scroll interne si table ouverte et beaucoup de cartes */}
-        {hasExports && (
-          <div className={cn("grid grid-cols-1 gap-2", hasTable && "max-h-36 overflow-y-auto")}>
-            {exports.map((exp, idx) => (
-              <ExportCard
-                key={exp.id}
-                exp={exp}
-                isFirst={idx === 0}
-                isSelected={selectedExportId === exp.id}
-                onSelect={() => handleSelectExport(exp)}
-                onDelete={() => setConfirmDeleteId(exp.id)}
-                onEditIndice={() => setEditIndiceId(exp.id)}
-              />
-            ))}
+              <span className="text-status-ok shrink-0">
+                {selectedExport.line_count} lignes
+              </span>
+              <span className="text-text-tertiary shrink-0">·</span>
+              <span className="text-status-ok shrink-0">
+                {selectedExport.columns_mapped ?? 0}/{selectedExport.columns_detected ?? 23} col.
+              </span>
+              <span className="text-text-tertiary shrink-0">·</span>
+              <span className="truncate text-text-tertiary">{selectedExport.file_name}</span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={() => setEditIndiceId(selectedExport.id)}
+                className="flex items-center gap-1 px-2 py-1 text-xs border border-border-std rounded hover:bg-bg-cell transition-colors text-text-secondary"
+              >
+                <Pencil size={11} />
+                Indice
+              </button>
+              <button
+                onClick={() => { setShowUpload(true); setSelectedExportId(null); }}
+                className="flex items-center gap-1 px-2 py-1 text-xs bg-vinci-blue text-white rounded hover:bg-vinci-blue/90 transition-colors"
+              >
+                <Upload size={11} />
+                Importer
+              </button>
+            </div>
           </div>
-        )}
-      </div>
 
-      {/* Zone tableau : prend toute la hauteur restante avec son propre defilement */}
-      {hasTable && (
-        <div className="flex-1 min-h-0 px-6 pb-4 flex flex-col pt-3">
-          <LinesTable
-            projectId={projectId}
-            exportId={selectedExportId}
-            selectedExport={selectedExport}
-            detail={detail ?? null}
-            isLoading={loadingDetail}
-            page={page}
-            perPage={perPage}
-            search={search}
-            searchInput={searchInput}
-            onPageChange={(p) => setPage(p)}
-            onPerPageChange={(pp) => { setPerPage(pp); setPage(1); }}
-            onSearchSubmit={handleSearch}
-            onSearchInputChange={setSearchInput}
-            onClearSearch={handleClearSearch}
-          />
+          {/* Tableau — prend toute la hauteur restante */}
+          <div className="flex-1 min-h-0 px-6 pb-4 flex flex-col pt-3">
+            <LinesTable
+              projectId={projectId}
+              exportId={selectedExportId}
+              selectedExport={selectedExport}
+              detail={detail ?? null}
+              isLoading={loadingDetail}
+              page={page}
+              perPage={perPage}
+              search={search}
+              searchInput={searchInput}
+              onPageChange={(p) => setPage(p)}
+              onPerPageChange={(pp) => { setPerPage(pp); setPage(1); }}
+              onSearchSubmit={handleSearch}
+              onSearchInputChange={setSearchInput}
+              onClearSearch={handleClearSearch}
+            />
+          </div>
+        </>
+      ) : (
+        /* ── MODE LISTE DES IMPORTS ──────────────────────────────────────── */
+        <div className="flex-1 min-h-0 overflow-auto px-6 pt-4 pb-6 space-y-3">
+          {/* Barre d'actions */}
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-text-primary">
+              Etudes CANECO BT
+              {hasExports && (
+                <span className="ml-2 text-xs font-normal text-text-tertiary">
+                  {exports.length} import{exports.length > 1 ? "s" : ""}
+                </span>
+              )}
+            </h3>
+            <button
+              onClick={() => setShowUpload((v) => !v)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-vinci-blue text-white rounded hover:bg-vinci-blue/90 transition-colors"
+            >
+              <Upload size={13} />
+              Importer un fichier CANECO
+            </button>
+          </div>
+
+          {/* Formulaire upload */}
+          {showUpload && (
+            <UploadForm
+              projectId={projectId}
+              onDone={(newExport) => {
+                queryClient.invalidateQueries({ queryKey: ["caneco", projectId] });
+                setShowUpload(false);
+                setSelectedExportId(newExport.id);
+                setPage(1);
+              }}
+              onCancel={() => setShowUpload(false)}
+            />
+          )}
+
+          {/* Etat vide */}
+          {!hasExports && !showUpload && (
+            <EmptyState onUpload={() => setShowUpload(true)} />
+          )}
+
+          {/* Cartes des imports */}
+          {hasExports && (
+            <div className="grid grid-cols-1 gap-2">
+              {exports.map((exp, idx) => (
+                <ExportCard
+                  key={exp.id}
+                  exp={exp}
+                  isFirst={idx === 0}
+                  isSelected={false}
+                  onSelect={() => handleSelectExport(exp)}
+                  onDelete={() => setConfirmDeleteId(exp.id)}
+                  onEditIndice={() => setEditIndiceId(exp.id)}
+                />
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -639,9 +669,7 @@ function EtudesTab({ projectId }: { projectId: string }) {
             <p className="text-sm text-text-secondary mb-1">
               Cette action supprimera definitivement cet import et toutes ses lignes parsees.
             </p>
-            <p className="text-xs text-text-tertiary mb-6">
-              Cette operation est irreversible.
-            </p>
+            <p className="text-xs text-text-tertiary mb-6">Cette operation est irreversible.</p>
             <div className="flex gap-3 justify-end">
               <button
                 onClick={() => setConfirmDeleteId(null)}
@@ -813,34 +841,8 @@ function LinesTable({
   const rangeStart = total === 0 ? 0 : (page - 1) * perPage + 1;
   const rangeEnd = Math.min(page * perPage, total);
 
-  const meta = selectedExport.status === "parsed"
-    ? `${selectedExport.file_name} — ${selectedExport.lines_read ?? 0} lignes lues, ${selectedExport.line_count ?? 0} parsees, ${selectedExport.columns_mapped ?? 0}/${selectedExport.columns_detected ?? 23} colonnes standard mappees, ${selectedExport.extra_columns_count ?? 0} col. suppl. — ${formatDateTime(selectedExport.uploaded_at)}`
-    : null;
-
-  const hasParseDiscrepancy =
-    selectedExport.lines_read !== null &&
-    selectedExport.line_count !== null &&
-    selectedExport.lines_read !== selectedExport.line_count;
-
   return (
     <div className="flex-1 min-h-0 flex flex-col gap-2">
-      {/* Ligne de metadonnees — taille fixe */}
-      {meta && (
-        <p
-          className={cn(
-            "shrink-0 text-xs px-1",
-            hasParseDiscrepancy ? "text-orange-600" : "text-text-tertiary"
-          )}
-        >
-          {meta}
-          {hasParseDiscrepancy && (
-            <button className="ml-2 underline hover:no-underline">
-              Voir le detail des erreurs
-            </button>
-          )}
-        </p>
-      )}
-
       {/* Barre recherche + pagination — epinglee au-dessus du tableau */}
       <div className="shrink-0 flex flex-wrap items-center justify-between gap-3 bg-white border border-border-std rounded px-3 py-2">
         {/* Recherche */}
