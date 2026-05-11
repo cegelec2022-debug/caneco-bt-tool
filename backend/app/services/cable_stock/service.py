@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from app.models.cable_stock import CableStockItem
 from app.models.caneco import CanecoLine
 from app.models.field_entry import FieldEntry
-from app.services.cable_book.builder import _contributions_for_line
+from app.services.cable_book.builder import _contributions_for_line, build_cable_book
 
 
 StockKey = tuple[str, str, str]  # (type_cable, section_label, ame)
@@ -133,44 +133,50 @@ def list_stock(
     }
     usage = compute_usage(caneco_lines, field_entries)
 
+    # Toutes les references presentes dans le CANECO (meme sans saisie chantier
+    # et meme sans enregistrement stock). Permet au Chef de voir d'emblee la
+    # liste complete des cables a tirer et de planifier ses livraisons.
+    carnet_keys: dict[StockKey, float | None] = {}
+    if caneco_lines:
+        report = build_cable_book(caneco_lines)
+        for entry in report.entries:
+            carnet_keys[
+                (entry.type_cable, entry.cable_caneco, entry.ame or "")
+            ] = entry.section_mm2
+
+    all_keys: set[StockKey] = set(by_key) | set(usage) | set(carnet_keys)
+
     result: list[StockComputed] = []
-    seen: set[StockKey] = set()
-
-    for key, it in by_key.items():
-        seen.add(key)
-        used_m, sec = usage.get(key, (0.0, it.section_mm2))
-        result.append(
-            StockComputed(
-                type_cable=it.type_cable,
-                section_label=it.section_label,
-                ame=it.ame,
-                section_mm2=it.section_mm2 if it.section_mm2 is not None else sec,
-                quantite_achetee=it.quantite_achetee,
-                quantite_livree=it.quantite_livree,
-                quantite_utilisee=used_m,
-                seuil_alerte_min_m=it.seuil_alerte_min_m,
-                item_id=it.id,
-            )
-        )
-
-    # References utilisees mais pas encore enregistrees
-    for key, (used_m, sec) in usage.items():
-        if key in seen:
-            continue
+    for key in all_keys:
         type_cable, section_label, ame = key
+        it = by_key.get(key)
+        used_m, used_sec = usage.get(key, (0.0, None))
+        section_mm2 = (
+            (it.section_mm2 if it else None)
+            or used_sec
+            or carnet_keys.get(key)
+        )
         result.append(
             StockComputed(
                 type_cable=type_cable,
                 section_label=section_label,
                 ame=ame,
-                section_mm2=sec,
-                quantite_achetee=0.0,
-                quantite_livree=0.0,
+                section_mm2=section_mm2,
+                quantite_achetee=it.quantite_achetee if it else 0.0,
+                quantite_livree=it.quantite_livree if it else 0.0,
                 quantite_utilisee=used_m,
-                seuil_alerte_min_m=0.0,
-                item_id=None,
+                seuil_alerte_min_m=it.seuil_alerte_min_m if it else 0.0,
+                item_id=it.id if it else None,
             )
         )
 
-    result.sort(key=lambda s: (s.type_cable, s.section_label, s.ame))
+    # Tri : par type puis par section croissante (mise en mm²)
+    result.sort(
+        key=lambda s: (
+            s.type_cable,
+            s.section_mm2 if s.section_mm2 is not None else 0.0,
+            s.section_label,
+            s.ame,
+        )
+    )
     return result

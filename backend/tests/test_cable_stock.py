@@ -112,19 +112,29 @@ def test_saisie_ecart_modere_passe_sans_commentaire(
 # --- Stock cables ----------------------------------------------------------
 
 
-def test_stock_initial_vide(client, admin_headers, project_with_lines):
+def test_stock_initial_liste_toutes_les_references_du_carnet(
+    client, admin_headers, project_with_lines
+):
+    """Sans aucune saisie, le stock liste deja toutes les references CANECO
+    du projet (a 0 utilise / 0 livre), pour que le Chef visualise l'ensemble
+    des cables a tirer et planifie ses commandes."""
     pid, _, _ = project_with_lines
     resp = client.get(f"/api/projects/{pid}/cable-stock", headers=admin_headers)
     assert resp.status_code == 200
     body = resp.json()
-    assert body["items"] == []
-    assert body["nb_references"] == 0
+    # Deux lignes CANECO : 5G6 (multipolaire) et 3X(1x150) (unipolaire)
+    # -> au moins une reference 5G6 + une reference 1*150 mm²
+    sections = {it["section_label"] for it in body["items"]}
+    assert "5G6" in sections
+    assert "1*150 mm²" in sections
+    assert all(it["quantite_utilisee"] == 0.0 for it in body["items"])
 
 
 def test_stock_se_remplit_auto_depuis_saisies(
     client, admin_headers, project_with_lines
 ):
-    """Apres une saisie chantier, la reference correspondante apparait dans le stock."""
+    """Apres une saisie chantier, la reference correspondante voit son
+    'quantite_utilisee' calculee automatiquement (les autres restent a 0)."""
     pid, l1, _ = project_with_lines
     client.put(
         f"/api/projects/{pid}/field-entries/{l1}",
@@ -134,10 +144,8 @@ def test_stock_se_remplit_auto_depuis_saisies(
     body = client.get(
         f"/api/projects/{pid}/cable-stock", headers=admin_headers
     ).json()
-    assert body["nb_references"] == 1
-    ref = body["items"][0]
+    ref = next(it for it in body["items"] if it["section_label"] == "5G6")
     assert ref["type_cable"] == "U1000R2V"
-    assert ref["section_label"] == "5G6"
     assert ref["ame"] == "Cuivre"
     assert ref["quantite_utilisee"] == 95.0
 
