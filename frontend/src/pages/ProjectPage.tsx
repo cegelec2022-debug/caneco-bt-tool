@@ -366,6 +366,9 @@ export default function ProjectPage() {
               {tab.id === "stock-cables" && (
                 <StockAlertBadge projectId={id!} />
               )}
+              {tab.id === "saisie-chantier" && (
+                <SaisieProgressBadge projectId={id!} />
+              )}
             </button>
           ))}
         </div>
@@ -4846,6 +4849,41 @@ function DepartSaisieRow({
 // Module B+ — Stock cables (auto-calcul depuis la saisie chantier)
 // ---------------------------------------------------------------------------
 
+/** Badge bleu : pourcentage d'avancement des saisies chantier (vue BE / RA). */
+function SaisieProgressBadge({ projectId }: { projectId: string }) {
+  // Reutilise le carnet par tableau qui remonte deja les saisies chantier
+  const { data: exports } = useQuery({
+    queryKey: ["caneco", projectId],
+    queryFn: () => listCaneco(projectId),
+  });
+  const expId = exports?.[0]?.id ?? "";
+  const { data } = useQuery({
+    queryKey: ["cable-book-by-tableau", projectId, expId],
+    queryFn: () => getCableBookByTableau(projectId, expId),
+    enabled: !!expId,
+  });
+  if (!data) return null;
+  const total = data.tableaux.reduce((s, t) => s + t.nb_departs, 0);
+  const done = data.tableaux.reduce(
+    (s, t) =>
+      s +
+      t.departs.filter(
+        (d) => d.longueur_realisee !== null && d.longueur_realisee !== undefined
+      ).length,
+    0
+  );
+  if (total === 0 || done === 0) return null;
+  const pct = Math.round((done / total) * 100);
+  return (
+    <span
+      className="inline-flex items-center justify-center min-w-[28px] h-[18px] px-1.5 rounded-full bg-vinci-blue text-white text-[10px] font-bold leading-none"
+      title={`${done} / ${total} circuits saisis`}
+    >
+      {pct}%
+    </span>
+  );
+}
+
 /** Badge rouge VINCI sur l'onglet Stock quand il y a des alertes actives. */
 function StockAlertBadge({ projectId }: { projectId: string }) {
   const { data } = useQuery({
@@ -4865,7 +4903,12 @@ function StockAlertBadge({ projectId }: { projectId: string }) {
 
 function StockCablesTab({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
-  const [filter, setFilter] = useState("");
+  const [typeFilter, setTypeFilter] = useState("");
+  const [sectionFilter, setSectionFilter] = useState("");
+  const [ameFilter, setAmeFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState<
+    "tous" | "alerte" | "utilise" | "non_commence"
+  >("tous");
   const [drafts, setDrafts] = useState<
     Record<string, { achete?: string; livre?: string; seuil?: string }>
   >({});
@@ -4894,21 +4937,43 @@ function StockCablesTab({ projectId }: { projectId: string }) {
     );
   }
 
+  // Listes deroulantes : types distincts, et sections dependantes du type choisi
+  const allTypes = Array.from(
+    new Set(data.items.map((it) => it.type_cable))
+  ).sort();
+  const sectionsForType = Array.from(
+    new Set(
+      data.items
+        .filter((it) => !typeFilter || it.type_cable === typeFilter)
+        .map((it) => it.section_label)
+    )
+  ).sort();
+  const allAmes = Array.from(new Set(data.items.map((it) => it.ame)))
+    .filter(Boolean)
+    .sort();
+
   const items = data.items
+    .filter((it) => !typeFilter || it.type_cable === typeFilter)
+    .filter((it) => !sectionFilter || it.section_label === sectionFilter)
+    .filter((it) => !ameFilter || it.ame === ameFilter)
     .filter((it) => {
-      if (!filter.trim()) return true;
-      const q = filter.toUpperCase();
-      return (
-        it.type_cable.toUpperCase().includes(q) ||
-        it.section_label.toUpperCase().includes(q) ||
-        it.ame.toUpperCase().includes(q)
-      );
+      if (statusFilter === "alerte") return it.en_alerte;
+      if (statusFilter === "utilise") return it.quantite_utilisee > 0;
+      if (statusFilter === "non_commence") return it.quantite_utilisee === 0;
+      return true;
     })
     // Alertes en haut, puis section croissante
     .sort((a, b) => {
       if (a.en_alerte !== b.en_alerte) return a.en_alerte ? -1 : 1;
       return (a.section_mm2 ?? 0) - (b.section_mm2 ?? 0);
     });
+
+  function resetFilters() {
+    setTypeFilter("");
+    setSectionFilter("");
+    setAmeFilter("");
+    setStatusFilter("tous");
+  }
 
   function rowKey(it: (typeof items)[number]) {
     return `${it.type_cable}|${it.section_label}|${it.ame}`;
@@ -5008,14 +5073,83 @@ function StockCablesTab({ projectId }: { projectId: string }) {
         />
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <input
-          type="text"
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          placeholder="Filtrer par type / section / ame"
-          className="text-xs border border-border-std rounded px-2 py-1.5 bg-white flex-1 min-w-[200px]"
-        />
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="flex-1 min-w-[150px]">
+          <label className="block text-[11px] text-text-tertiary mb-1">
+            Type de cable
+          </label>
+          <select
+            value={typeFilter}
+            onChange={(e) => {
+              setTypeFilter(e.target.value);
+              setSectionFilter("");
+            }}
+            className="w-full text-xs border border-border-std rounded px-2 py-1.5 bg-white"
+          >
+            <option value="">Tous les types</option>
+            {allTypes.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex-1 min-w-[140px]">
+          <label className="block text-[11px] text-text-tertiary mb-1">
+            Section
+          </label>
+          <select
+            value={sectionFilter}
+            onChange={(e) => setSectionFilter(e.target.value)}
+            className="w-full text-xs border border-border-std rounded px-2 py-1.5 bg-white"
+          >
+            <option value="">Toutes les sections</option>
+            {sectionsForType.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex-1 min-w-[110px]">
+          <label className="block text-[11px] text-text-tertiary mb-1">Ame</label>
+          <select
+            value={ameFilter}
+            onChange={(e) => setAmeFilter(e.target.value)}
+            className="w-full text-xs border border-border-std rounded px-2 py-1.5 bg-white"
+          >
+            <option value="">Toutes</option>
+            {allAmes.map((a) => (
+              <option key={a} value={a}>
+                {a}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex-1 min-w-[130px]">
+          <label className="block text-[11px] text-text-tertiary mb-1">Etat</label>
+          <select
+            value={statusFilter}
+            onChange={(e) =>
+              setStatusFilter(e.target.value as typeof statusFilter)
+            }
+            className="w-full text-xs border border-border-std rounded px-2 py-1.5 bg-white"
+          >
+            <option value="tous">Tous</option>
+            <option value="alerte">En alerte</option>
+            <option value="utilise">Tirage en cours</option>
+            <option value="non_commence">Non commence</option>
+          </select>
+        </div>
+        {(typeFilter || sectionFilter || ameFilter || statusFilter !== "tous") && (
+          <button
+            type="button"
+            onClick={resetFilters}
+            className="text-xs px-2 py-1.5 text-vinci-red hover:underline self-end"
+          >
+            Reinitialiser
+          </button>
+        )}
       </div>
 
       {errorMsg && (

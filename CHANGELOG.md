@@ -91,3 +91,18 @@
 - Couleur rouge VINCI utilisee comme accent strategique (souligne d'onglet
   actif, bouton bloque pour commentaire manquant, badge d'alerte, alertes
   stock) tout en gardant le bleu VINCI comme couleur de structure.
+
+### Stock cables — exhaustif + filtres pro
+
+- Le stock liste desormais **toutes les references du carnet CANECO**
+  (24 lignes pour DACHSER), pas seulement celles deja saisies. Le Chef
+  voit d'emblee l'ensemble des cables a tirer et peut planifier ses
+  commandes / livraisons.
+- Filtres remplaces par 4 listes deroulantes dependantes (Type / Section
+  /Ame / Etat), avec section filtree dynamiquement selon le type choisi.
+  L'etat 'En alerte / Tirage en cours / Non commence' aide a focaliser sur
+  les references critiques. Bouton 'Reinitialiser' rouge VINCI.
+- Tri : alertes en haut, puis section croissante (mm²).
+- Badge de progression sur l'onglet Saisie chantier (% d'avancement
+  affiche pour BE / RA / admin) pour suivre l'activite Chef de Chantier
+  d'un coup d'oeil.
