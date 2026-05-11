@@ -4350,8 +4350,11 @@ function CarnetParTableauSection({
 
               {isOpen && (
                 <div className="overflow-x-auto bg-bg-cell border-t border-border-std">
-                  <table className="w-full text-xs">
-                    <thead style={{ backgroundColor: "#001E50" }}>
+                  <table className="w-full text-xs min-w-[820px]">
+                    <thead
+                      className="sticky top-0 z-10 shadow-sm"
+                      style={{ backgroundColor: "#001E50" }}
+                    >
                       <tr>
                         <th className="px-3 py-1.5 text-left font-medium text-white/90">
                           Amont
@@ -5166,10 +5169,10 @@ function StockCablesTab({ projectId }: { projectId: string }) {
           </p>
         </div>
       ) : (
-        <div className="border border-border-std rounded bg-white overflow-x-auto">
+        <div className="border border-border-std rounded bg-white">
           <table className="w-full text-xs min-w-[760px]">
             <thead
-              className="sticky top-0 z-10"
+              className="sticky top-0 z-20 shadow-sm"
               style={{ backgroundColor: "#001E50" }}
             >
               <tr>
