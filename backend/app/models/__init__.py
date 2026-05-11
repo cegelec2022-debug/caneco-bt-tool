@@ -1,4 +1,4 @@
-from app.models.bordereau import Bordereau, BordereauLine
+from app.models.bordereau import BordereauImport, BordereauLine, BordereauSection
 from app.models.caneco import CanecoExport, CanecoLine
 from app.models.project import Project
 from app.models.tableau import Departure, Tableau
@@ -10,7 +10,8 @@ __all__ = [
     "Project",
     "CanecoExport",
     "CanecoLine",
-    "Bordereau",
+    "BordereauImport",
+    "BordereauSection",
     "BordereauLine",
     "Tableau",
     "Departure",

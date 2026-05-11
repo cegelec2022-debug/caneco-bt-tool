@@ -22,9 +22,24 @@ import {
   updateCanecoIndice,
   uploadCaneco,
 } from "@/api/caneco";
+import {
+  deleteBordereau,
+  getBordereau,
+  listBordereau,
+  updateBordereauIndice,
+  uploadBordereau,
+} from "@/api/bordereau";
 import { deleteProject, getProject, updateProject } from "@/api/projects";
 import { cn } from "@/lib/utils";
-import type { CanecoExport, CanecoExportDetail, CanecoLine, ProjectUpdate } from "@/types";
+import type {
+  BordereauDetail,
+  BordereauImport,
+  BordereauSection,
+  CanecoExport,
+  CanecoExportDetail,
+  CanecoLine,
+  ProjectUpdate,
+} from "@/types";
 
 // ---------------------------------------------------------------------------
 // Constantes tableau
@@ -119,6 +134,7 @@ function getRawValue(line: CanecoLine, fieldKey: keyof CanecoLine): string {
 const TABS = [
   { id: "overview", label: "Vue d'ensemble" },
   { id: "studies", label: "Etudes" },
+  { id: "bordereau", label: "Bordereau" },
   { id: "tableaux", label: "Tableaux" },
   { id: "doe", label: "DOE" },
 ] as const;
@@ -306,6 +322,8 @@ export default function ProjectPage() {
         )}
 
         {activeTab === "studies" && <EtudesTab projectId={id!} />}
+
+        {activeTab === "bordereau" && <BordereauTab projectId={id!} />}
 
         {activeTab === "tableaux" && (
           <div className="flex-1 min-h-0 overflow-auto p-6">
@@ -1420,6 +1438,719 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
     <div className="flex gap-4">
       <dt className="w-28 text-text-tertiary shrink-0">{label}</dt>
       <dd className="text-text-primary">{value}</dd>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Onglet Bordereau
+// ---------------------------------------------------------------------------
+
+const BDP_PAGE_SIZES = [25, 50, 100, 200] as const;
+type BdpPageSize = (typeof BDP_PAGE_SIZES)[number];
+
+const BDP_COLUMNS = [
+  { key: "num_prix" as const, label: "N°Prix", width: "min-w-[70px]" },
+  { key: "designation" as const, label: "Designation", width: "min-w-[220px]" },
+  { key: "sous_famille" as const, label: "Sous-famille", width: "min-w-[180px]" },
+  { key: "unite" as const, label: "Unite", width: "min-w-[56px]" },
+  { key: "quantite" as const, label: "Quantite", width: "min-w-[80px]", numeric: true },
+  { key: "detected_kind" as const, label: "Type", width: "min-w-[90px]" },
+  { key: "detected_section_mm2" as const, label: "Section mm2", width: "min-w-[90px]" },
+  { key: "detected_material" as const, label: "Materiau", width: "min-w-[80px]" },
+  { key: "detected_cable_type" as const, label: "Type cable", width: "min-w-[100px]" },
+] as const;
+
+function BordereauTab({ projectId }: { projectId: string }) {
+  const queryClient = useQueryClient();
+  const [selectedImportId, setSelectedImportId] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState<BdpPageSize>(50);
+  const [sectionCode, setSectionCode] = useState("");
+  const [search, setSearch] = useState("");
+  const [searchInput, setSearchInput] = useState("");
+  const [showUpload, setShowUpload] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [editIndiceId, setEditIndiceId] = useState<string | null>(null);
+
+  const { data: imports, isLoading: loadingImports } = useQuery({
+    queryKey: ["bordereau", projectId],
+    queryFn: () => listBordereau(projectId),
+  });
+
+  const { data: detail, isLoading: loadingDetail } = useQuery({
+    queryKey: ["bordereau-detail", projectId, selectedImportId, page, perPage, sectionCode, search],
+    queryFn: () => getBordereau(projectId, selectedImportId!, page, perPage, sectionCode, search),
+    enabled: !!selectedImportId,
+  });
+
+  const { mutate: doDeleteImport, isPending: isDeleting } = useMutation({
+    mutationFn: (importId: string) => deleteBordereau(projectId, importId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["bordereau", projectId] });
+      if (confirmDeleteId === selectedImportId) setSelectedImportId(null);
+      setConfirmDeleteId(null);
+    },
+  });
+
+  const { mutate: doUpdateIndice } = useMutation({
+    mutationFn: ({ importId, indice }: { importId: string; indice: string }) =>
+      updateBordereauIndice(projectId, importId, indice),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["bordereau", projectId] });
+      setEditIndiceId(null);
+    },
+  });
+
+  function handleSearch(e: React.FormEvent) {
+    e.preventDefault();
+    setSearch(searchInput);
+    setPage(1);
+  }
+
+  function handleClearSearch() {
+    setSearchInput("");
+    setSearch("");
+    setPage(1);
+  }
+
+  function handleSelectImport(imp: BordereauImport) {
+    setSelectedImportId(imp.id);
+    setPage(1);
+    setSearch("");
+    setSearchInput("");
+    setSectionCode("");
+    setShowUpload(false);
+  }
+
+  if (loadingImports) {
+    return <div className="p-6 text-sm text-text-tertiary">Chargement...</div>;
+  }
+
+  const hasImports = imports && imports.length > 0;
+  const selectedImport = imports?.find((i) => i.id === selectedImportId) ?? null;
+  const hasTable = !!selectedImportId && !!selectedImport;
+
+  return (
+    <div className="flex-1 min-h-0 flex flex-col">
+      {hasTable ? (
+        /* Mode tableau ouvert */
+        <>
+          <div className="shrink-0 px-6 py-2 border-b border-border-std bg-white flex items-center justify-between gap-4">
+            <div className="flex items-center gap-2 min-w-0 text-xs">
+              <button
+                onClick={() => setSelectedImportId(null)}
+                className="flex items-center gap-1 text-text-tertiary hover:text-vinci-blue transition-colors shrink-0"
+              >
+                <ChevronLeft size={13} />
+                Imports
+              </button>
+              <span className="text-text-tertiary shrink-0">/</span>
+              {selectedImport.indice && (
+                <span className="font-semibold px-2 py-0.5 rounded bg-vinci-blue text-white shrink-0">
+                  Indice {selectedImport.indice}
+                </span>
+              )}
+              <span className="text-status-ok shrink-0">
+                {selectedImport.total_articles} articles
+              </span>
+              <span className="text-text-tertiary shrink-0">·</span>
+              <span className="text-status-ok shrink-0">
+                {selectedImport.sections_count} sections
+              </span>
+              <span className="text-text-tertiary shrink-0">·</span>
+              <span className="truncate text-text-tertiary">{selectedImport.file_name}</span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={() => setEditIndiceId(selectedImport.id)}
+                className="flex items-center gap-1 px-2 py-1 text-xs border border-border-std rounded hover:bg-bg-cell transition-colors text-text-secondary"
+              >
+                <Pencil size={11} />
+                Indice
+              </button>
+              <button
+                onClick={() => { setShowUpload(true); setSelectedImportId(null); }}
+                className="flex items-center gap-1 px-2 py-1 text-xs bg-vinci-blue text-white rounded hover:bg-vinci-blue/90 transition-colors"
+              >
+                <Upload size={11} />
+                Importer
+              </button>
+            </div>
+          </div>
+
+          <div className="flex-1 min-h-0 px-6 pb-4 flex flex-col pt-3">
+            <BdpLinesTable
+              detail={detail ?? null}
+              isLoading={loadingDetail}
+              page={page}
+              perPage={perPage}
+              sectionCode={sectionCode}
+              search={search}
+              searchInput={searchInput}
+              onPageChange={(p) => setPage(p)}
+              onPerPageChange={(pp) => { setPerPage(pp); setPage(1); }}
+              onSectionChange={(s) => { setSectionCode(s); setPage(1); }}
+              onSearchSubmit={handleSearch}
+              onSearchInputChange={setSearchInput}
+              onClearSearch={handleClearSearch}
+            />
+          </div>
+        </>
+      ) : (
+        /* Mode liste des imports */
+        <div className="flex-1 min-h-0 overflow-auto px-6 pt-4 pb-6 space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-semibold text-text-primary">
+                Bordereau des prix — electricite CFO
+                {hasImports && (
+                  <span className="ml-2 text-xs font-normal text-text-tertiary">
+                    {imports.length} import{imports.length > 1 ? "s" : ""}
+                  </span>
+                )}
+              </h3>
+              <p className="text-xs text-text-tertiary mt-0.5">
+                Seule la feuille BDP_ELECTRICITE CFO est analysee en V1.
+              </p>
+            </div>
+            <button
+              onClick={() => setShowUpload((v) => !v)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-vinci-blue text-white rounded hover:bg-vinci-blue/90 transition-colors"
+            >
+              <Upload size={13} />
+              Importer un bordereau
+            </button>
+          </div>
+
+          {showUpload && (
+            <BdpUploadForm
+              projectId={projectId}
+              onDone={(newImport) => {
+                queryClient.invalidateQueries({ queryKey: ["bordereau", projectId] });
+                setShowUpload(false);
+                setSelectedImportId(newImport.id);
+                setPage(1);
+              }}
+              onCancel={() => setShowUpload(false)}
+            />
+          )}
+
+          {!hasImports && !showUpload && (
+            <div className="border-2 border-dashed border-border-std rounded p-12 text-center">
+              <FileSpreadsheet size={40} className="mx-auto mb-3 text-text-tertiary" />
+              <p className="text-sm font-medium text-text-primary mb-1">
+                Aucun bordereau importe
+              </p>
+              <p className="text-xs text-text-tertiary mb-4">
+                Importez le fichier bordereau .xlsx (feuille BDP_ELECTRICITE CFO).
+              </p>
+              <button
+                onClick={() => setShowUpload(true)}
+                className="inline-flex items-center gap-2 px-4 py-2 text-sm bg-vinci-blue text-white rounded hover:bg-vinci-blue/90 transition-colors"
+              >
+                <Upload size={14} />
+                Importer un bordereau
+              </button>
+            </div>
+          )}
+
+          {hasImports && (
+            <div className="grid grid-cols-1 gap-2">
+              {imports.map((imp, idx) => (
+                <BdpImportCard
+                  key={imp.id}
+                  imp={imp}
+                  isFirst={idx === 0}
+                  onSelect={() => handleSelectImport(imp)}
+                  onDelete={() => setConfirmDeleteId(imp.id)}
+                  onEditIndice={() => setEditIndiceId(imp.id)}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {confirmDeleteId && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded w-full max-w-sm shadow-lg p-6">
+            <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center mb-4">
+              <Trash2 size={18} className="text-status-warn" />
+            </div>
+            <h3 className="font-semibold text-text-primary mb-2">Supprimer l'import</h3>
+            <p className="text-sm text-text-secondary mb-6">
+              Cette action supprimera definitivement cet import bordereau et toutes ses lignes.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setConfirmDeleteId(null)}
+                disabled={isDeleting}
+                className="px-4 py-2 text-sm text-text-secondary border border-border-std rounded hover:bg-bg-cell transition-colors"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={() => doDeleteImport(confirmDeleteId)}
+                disabled={isDeleting}
+                className="px-4 py-2 text-sm bg-red-600 text-white rounded hover:bg-red-700 transition-colors disabled:opacity-50"
+              >
+                {isDeleting ? "Suppression..." : "Supprimer"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editIndiceId && (
+        <IndiceModal
+          currentIndice={imports?.find((i) => i.id === editIndiceId)?.indice ?? ""}
+          onSave={(indice) => doUpdateIndice({ importId: editIndiceId, indice })}
+          onClose={() => setEditIndiceId(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Carte import bordereau
+// ---------------------------------------------------------------------------
+
+function BdpImportCard({
+  imp,
+  isFirst,
+  onSelect,
+  onDelete,
+  onEditIndice,
+}: {
+  imp: BordereauImport;
+  isFirst: boolean;
+  onSelect: () => void;
+  onDelete: () => void;
+  onEditIndice: () => void;
+}) {
+  const statusConfig = {
+    parsed: { label: "Parse", cls: "bg-green-100 text-status-ok" },
+    parsing: { label: "En cours...", cls: "bg-yellow-100 text-yellow-700" },
+    error: { label: "Erreur", cls: "bg-red-100 text-status-warn" },
+    uploaded: { label: "Upload OK", cls: "bg-blue-100 text-vinci-blue" },
+  } as const;
+
+  const cfg = statusConfig[imp.status] ?? { label: imp.status, cls: "bg-bg-cell text-text-tertiary" };
+  const histBadge = isFirst
+    ? { label: "actif", cls: "bg-green-100 text-status-ok" }
+    : { label: "ancien", cls: "bg-gray-100 text-text-tertiary" };
+
+  return (
+    <div
+      className="border border-border-std rounded p-3.5 cursor-pointer bg-white hover:border-vinci-blue/40 transition-colors group"
+      onClick={onSelect}
+    >
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <FileSpreadsheet size={16} className="text-text-tertiary shrink-0" />
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {imp.indice && (
+                <span className="text-xs font-semibold px-2 py-0.5 rounded bg-vinci-blue text-white">
+                  Indice {imp.indice}
+                </span>
+              )}
+              <span className={cn("text-xs px-2 py-0.5 rounded", histBadge.cls)}>
+                {histBadge.label}
+              </span>
+              <span className={cn("text-xs px-2 py-0.5 rounded", cfg.label === "Erreur" ? cfg.cls : cfg.cls)}>
+                {cfg.label}
+              </span>
+              {imp.total_articles !== null && (
+                <span className="text-xs text-text-tertiary">
+                  {imp.total_articles} articles
+                </span>
+              )}
+              {imp.sections_count !== null && (
+                <span className="text-xs text-text-tertiary">
+                  {imp.sections_count} sections
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-text-tertiary mt-0.5 truncate">{imp.file_name}</p>
+            {imp.status === "error" && imp.error_message && (
+              <p className="text-xs text-status-warn mt-0.5 truncate">{imp.error_message}</p>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-xs text-text-tertiary hidden sm:block">
+            {formatDateTime(imp.created_at)}
+          </span>
+          <button
+            onClick={(e) => { e.stopPropagation(); onEditIndice(); }}
+            className="opacity-0 group-hover:opacity-100 transition-opacity text-text-tertiary hover:text-vinci-blue"
+            title="Modifier l'indice"
+          >
+            <Pencil size={13} />
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); onDelete(); }}
+            className="opacity-0 group-hover:opacity-100 transition-opacity text-text-tertiary hover:text-status-warn"
+            title="Supprimer cet import"
+          >
+            <Trash2 size={13} />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Tableau paginé bordereau avec en-tetes epingles
+// ---------------------------------------------------------------------------
+
+function BdpLinesTable({
+  detail,
+  isLoading,
+  page,
+  perPage,
+  sectionCode,
+  search,
+  searchInput,
+  onPageChange,
+  onPerPageChange,
+  onSectionChange,
+  onSearchSubmit,
+  onSearchInputChange,
+  onClearSearch,
+}: {
+  detail: BordereauDetail | null;
+  isLoading: boolean;
+  page: number;
+  perPage: BdpPageSize;
+  sectionCode: string;
+  search: string;
+  searchInput: string;
+  onPageChange: (p: number) => void;
+  onPerPageChange: (pp: BdpPageSize) => void;
+  onSectionChange: (s: string) => void;
+  onSearchSubmit: (e: React.FormEvent) => void;
+  onSearchInputChange: (v: string) => void;
+  onClearSearch: () => void;
+}) {
+  const total = detail?.total ?? 0;
+  const total_pages = detail?.total_pages ?? 1;
+  const rangeStart = total === 0 ? 0 : (page - 1) * perPage + 1;
+  const rangeEnd = Math.min(page * perPage, total);
+
+  // Sections disponibles pour le filtre dropdown (uniquement les sous-sections NNN)
+  const sections: BordereauSection[] = detail?.sections ?? [];
+  const subSections = sections.filter((s) => /^\d{3}$/.test(s.code));
+
+  return (
+    <div className="flex-1 min-h-0 flex flex-col gap-2">
+      {/* Barre controles */}
+      <div className="shrink-0 flex flex-wrap items-center justify-between gap-3 bg-white border border-border-std rounded px-3 py-2">
+        <div className="flex items-center gap-2 flex-wrap min-w-0">
+          {/* Filtre section */}
+          <select
+            value={sectionCode}
+            onChange={(e) => onSectionChange(e.target.value)}
+            className="text-xs border border-border-std rounded px-2 py-1 bg-white focus:outline-none focus:border-vinci-blue"
+          >
+            <option value="">Toutes sections</option>
+            {subSections.map((s) => (
+              <option key={s.id} value={s.code}>
+                {s.code} — {s.title ?? ""}
+              </option>
+            ))}
+          </select>
+
+          {/* Recherche libre */}
+          <form onSubmit={onSearchSubmit} className="flex items-center gap-1.5">
+            <div className="relative flex items-center">
+              <Search size={13} className="absolute left-2 text-text-tertiary pointer-events-none" />
+              <input
+                type="text"
+                value={searchInput}
+                onChange={(e) => onSearchInputChange(e.target.value)}
+                placeholder="Recherche libre..."
+                className="pl-7 pr-7 py-1 text-xs border border-border-std rounded focus:outline-none focus:border-vinci-blue w-44"
+              />
+              {searchInput && (
+                <button
+                  type="button"
+                  onClick={onClearSearch}
+                  className="absolute right-2 text-text-tertiary hover:text-text-primary"
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+            <button
+              type="submit"
+              className="px-2 py-1 text-xs bg-vinci-blue text-white rounded hover:bg-vinci-blue/90 transition-colors"
+            >
+              Ok
+            </button>
+          </form>
+        </div>
+
+        {/* Compteur + taille page + pagination */}
+        <div className="flex items-center gap-3 shrink-0">
+          <span className="text-xs text-text-tertiary">
+            {total} article{total !== 1 ? "s" : ""} — {rangeStart}–{rangeEnd}
+          </span>
+          <div className="flex items-center gap-1">
+            <label className="text-xs text-text-tertiary">Lignes :</label>
+            <select
+              value={perPage}
+              onChange={(e) => onPerPageChange(Number(e.target.value) as BdpPageSize)}
+              className="text-xs border border-border-std rounded px-1 py-0.5 bg-white focus:outline-none focus:border-vinci-blue"
+            >
+              {BDP_PAGE_SIZES.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center gap-0.5">
+            <PageBtn icon={<ChevronFirst size={13} />} onClick={() => onPageChange(1)} disabled={page <= 1} title="Premiere page" />
+            <PageBtn icon={<ChevronLeft size={13} />} onClick={() => onPageChange(page - 1)} disabled={page <= 1} title="Page precedente" />
+            <PageBtn icon={<ChevronRight size={13} />} onClick={() => onPageChange(page + 1)} disabled={page >= total_pages} title="Page suivante" />
+            <PageBtn icon={<ChevronLast size={13} />} onClick={() => onPageChange(total_pages)} disabled={page >= total_pages} title="Derniere page" />
+          </div>
+        </div>
+      </div>
+
+      {/* Tableau avec en-tetes epingles */}
+      <div className="flex-1 min-h-0 overflow-auto border border-border-std rounded">
+        {isLoading ? (
+          <div className="p-8 text-center text-sm text-text-tertiary">Chargement...</div>
+        ) : !detail || detail.lines.length === 0 ? (
+          <div className="p-8 text-center text-sm text-text-tertiary">
+            {search || sectionCode ? "Aucun resultat pour ce filtre." : "Aucun article."}
+          </div>
+        ) : (
+          <table className="w-full text-xs border-collapse">
+            <thead>
+              <tr>
+                <th
+                  className="px-3 py-2 text-left font-medium text-white text-xs whitespace-nowrap border-r border-white/10"
+                  style={{ background: "#001E50", position: "sticky", top: 0, left: 0, zIndex: 30, minWidth: "48px", boxShadow: "2px 2px 0 rgba(0,0,0,0.08)" }}
+                >
+                  #
+                </th>
+                {BDP_COLUMNS.map((col) => (
+                  <th
+                    key={col.key}
+                    className={cn("px-3 py-2 text-left font-medium text-white text-xs whitespace-nowrap border-r border-white/10 last:border-r-0", col.width)}
+                    style={{ background: "#001E50", position: "sticky", top: 0, zIndex: 20, boxShadow: "0 2px 0 rgba(0,0,0,0.08)" }}
+                  >
+                    {col.label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {detail.lines.map((line, rowIdx) => {
+                const rowBg = rowIdx % 2 === 0 ? "bg-white" : "bg-slate-50";
+                return (
+                  <tr
+                    key={line.id}
+                    className={cn("border-b border-slate-200 hover:bg-blue-50/40 transition-colors", rowBg)}
+                  >
+                    <td
+                      className={cn("px-3 py-1.5 font-mono text-text-tertiary border-r border-slate-200", rowBg)}
+                      style={{ position: "sticky", left: 0, zIndex: 10 }}
+                    >
+                      {line.excel_row_number ?? rowIdx + 1}
+                    </td>
+                    {BDP_COLUMNS.map((col) => {
+                      const val = line[col.key];
+                      if (val === null || val === undefined) {
+                        return (
+                          <td key={col.key} className="px-3 py-1.5 whitespace-nowrap">
+                            <span className="text-slate-300">—</span>
+                          </td>
+                        );
+                      }
+                      return (
+                        <td
+                          key={col.key}
+                          className={cn(
+                            "px-3 py-1.5 whitespace-nowrap text-text-primary",
+                            "numeric" in col && col.numeric && "font-mono"
+                          )}
+                        >
+                          {typeof val === "number" ? formatNum(val) : String(val)}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {detail && total_pages > 1 && (
+        <div className="shrink-0 flex justify-center items-center gap-1">
+          <PageBtn icon={<ChevronFirst size={13} />} onClick={() => onPageChange(1)} disabled={page <= 1} title="Premiere page" />
+          <PageBtn icon={<ChevronLeft size={13} />} onClick={() => onPageChange(page - 1)} disabled={page <= 1} title="Page precedente" />
+          <span className="text-xs text-text-tertiary px-2">{page} / {total_pages}</span>
+          <PageBtn icon={<ChevronRight size={13} />} onClick={() => onPageChange(page + 1)} disabled={page >= total_pages} title="Page suivante" />
+          <PageBtn icon={<ChevronLast size={13} />} onClick={() => onPageChange(total_pages)} disabled={page >= total_pages} title="Derniere page" />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Formulaire d'upload bordereau
+// ---------------------------------------------------------------------------
+
+function BdpUploadForm({
+  projectId,
+  onDone,
+  onCancel,
+}: {
+  projectId: string;
+  onDone: (imp: BordereauImport) => void;
+  onCancel: () => void;
+}) {
+  const [file, setFile] = useState<File | null>(null);
+  const [indice, setIndice] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const { mutate: doUpload, isPending } = useMutation({
+    mutationFn: () => uploadBordereau(projectId, file!, indice),
+    onSuccess: (imp) => onDone(imp),
+    onError: (err: unknown) => {
+      const msg =
+        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
+        "Erreur lors de l'import.";
+      setError(msg);
+    },
+  });
+
+  const handleFile = useCallback((f: File) => {
+    const ext = f.name.split(".").pop()?.toLowerCase();
+    if (ext !== "xlsx") {
+      setError("Le bordereau doit etre en format .xlsx.");
+      return;
+    }
+    if (f.size > 50 * 1024 * 1024) {
+      setError("Fichier trop volumineux (max 50 Mo).");
+      return;
+    }
+    setFile(f);
+    setError(null);
+    const detected = detectIndiceFromFilename(f.name);
+    if (detected) setIndice(detected);
+  }, []);
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      setIsDragging(false);
+      const f = e.dataTransfer.files[0];
+      if (f) handleFile(f);
+    },
+    [handleFile]
+  );
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!file) { setError("Veuillez selectionner un fichier."); return; }
+    setError(null);
+    doUpload();
+  }
+
+  return (
+    <div className="border border-border-std rounded bg-white p-5">
+      <h4 className="text-sm font-semibold text-text-primary mb-4">
+        Importer un bordereau de prix (feuille BDP_ELECTRICITE CFO)
+      </h4>
+
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div
+          onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+          onDragLeave={() => setIsDragging(false)}
+          onDrop={handleDrop}
+          onClick={() => inputRef.current?.click()}
+          className={cn(
+            "border-2 border-dashed rounded p-8 text-center cursor-pointer transition-colors",
+            isDragging ? "border-vinci-blue bg-blue-50" :
+            file ? "border-green-400 bg-green-50" :
+            "border-border-std hover:border-vinci-blue/50 hover:bg-bg-light"
+          )}
+        >
+          <input
+            ref={inputRef}
+            type="file"
+            accept=".xlsx"
+            className="hidden"
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
+          />
+          <FileSpreadsheet size={32} className={cn("mx-auto mb-2", file ? "text-green-600" : "text-text-tertiary")} />
+          {file ? (
+            <div>
+              <p className="text-sm font-medium text-text-primary">{file.name}</p>
+              <p className="text-xs text-text-tertiary mt-1">{(file.size / 1024).toFixed(0)} Ko — cliquez pour changer</p>
+            </div>
+          ) : (
+            <div>
+              <p className="text-sm text-text-secondary">Glissez votre fichier bordereau .xlsx ici</p>
+              <p className="text-xs text-text-tertiary mt-1">ou cliquez pour parcourir</p>
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center gap-3">
+          <label className="text-sm text-text-secondary shrink-0 w-32">Indice (optionnel)</label>
+          <input
+            type="text"
+            value={indice}
+            onChange={(e) => setIndice(e.target.value.toUpperCase())}
+            maxLength={10}
+            placeholder="ex. A, B, C..."
+            className="w-24 border border-border-std rounded px-3 py-2 text-sm font-mono uppercase focus:outline-none focus:border-vinci-blue"
+          />
+        </div>
+
+        {error && (
+          <div className="flex items-start gap-2 text-xs text-status-warn bg-red-50 border border-red-200 rounded px-3 py-2">
+            <span className="mt-0.5 shrink-0">&#9888;</span>
+            <span>{error}</span>
+          </div>
+        )}
+
+        <div className="flex gap-3 justify-end">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={isPending}
+            className="px-4 py-2 text-sm text-text-secondary border border-border-std rounded hover:bg-bg-cell transition-colors"
+          >
+            Annuler
+          </button>
+          <button
+            type="submit"
+            disabled={isPending || !file}
+            className="flex items-center gap-2 px-4 py-2 text-sm bg-vinci-blue text-white rounded hover:bg-vinci-blue/90 transition-colors disabled:opacity-50"
+          >
+            {isPending ? (
+              <><span className="inline-block w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Parsing...</>
+            ) : (
+              <><Upload size={14} /> Importer et parser</>
+            )}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }

@@ -105,3 +105,53 @@ export interface CanecoExportDetail {
   per_page: number;
   total_pages: number;
 }
+
+export interface BordereauImport {
+  id: string;
+  project_id: string;
+  file_name: string;
+  indice: string | null;
+  status: "uploaded" | "parsing" | "parsed" | "error";
+  total_lines: number | null;
+  total_articles: number | null;
+  sections_count: number | null;
+  error_message: string | null;
+  created_at: string;
+  created_by_id: string | null;
+}
+
+export interface BordereauSection {
+  id: string;
+  bordereau_import_id: string;
+  code: string;
+  title: string | null;
+  excel_row_number: number | null;
+  order_index: number;
+}
+
+export interface BordereauLine {
+  id: string;
+  bordereau_import_id: string;
+  section_id: string | null;
+  excel_row_number: number | null;
+  num_prix: string | null;
+  designation: string | null;
+  unite: string | null;
+  quantite: number | null;
+  quantite_raw: string | null;
+  sous_famille: string | null;
+  detected_section_mm2: string | null;
+  detected_material: string | null;
+  detected_cable_type: string | null;
+  detected_kind: string | null;
+}
+
+export interface BordereauDetail {
+  imp: BordereauImport;
+  sections: BordereauSection[];
+  lines: BordereauLine[];
+  total: number;
+  page: number;
+  per_page: number;
+  total_pages: number;
+}
