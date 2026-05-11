@@ -17,7 +17,12 @@ from app.repositories import (
     field_entry_repository,
     project_repository,
 )
-from app.schemas.field_entry import FieldEntryResponse, FieldEntryUpsert
+from app.schemas.field_entry import (
+    ECART_COMMENT_REQUIRED_PCT,
+    FieldEntryResponse,
+    FieldEntryUpsert,
+    commentaire_obligatoire,
+)
 
 router = APIRouter(prefix="/api/projects", tags=["field-entries"])
 
@@ -79,7 +84,21 @@ def upsert_field_entry(
 ) -> FieldEntryResponse:
     """Cree ou met a jour la saisie chantier d'un depart (ligne CANECO)."""
     _check_project_access_chantier(project_id, db, current_user)
-    _check_line_belongs_to_project(db, caneco_line_id, project_id)
+    line = _check_line_belongs_to_project(db, caneco_line_id, project_id)
+
+    # Regle metier : commentaire obligatoire si reel=0 ou ecart > 50 % du prevu.
+    if commentaire_obligatoire(line.longueur, payload.longueur_realisee) and not (
+        payload.commentaire and payload.commentaire.strip()
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"Commentaire obligatoire : l'ecart depasse "
+                f"{ECART_COMMENT_REQUIRED_PCT:.0f} % de la longueur prevue, "
+                "ou la longueur reelle est nulle. Justifiez la situation pour "
+                "que le BE et le RA en soient informes."
+            ),
+        )
 
     entry = field_entry_repository.upsert(
         db,
