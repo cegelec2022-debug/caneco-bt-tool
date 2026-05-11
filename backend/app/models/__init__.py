@@ -1,4 +1,5 @@
 from app.models.bordereau import BordereauImport, BordereauLine, BordereauSection
+from app.models.cable_stock import CableStockItem
 from app.models.caneco import CanecoExport, CanecoLine
 from app.models.cps import CpsImport
 from app.models.field_entry import FieldEntry
@@ -22,4 +23,5 @@ __all__ = [
     "Tableau",
     "Departure",
     "FieldEntry",
+    "CableStockItem",
 ]
