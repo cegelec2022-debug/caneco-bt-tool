@@ -48,3 +48,46 @@
   commentaire repliable. Indicateur d'ecart colore (vert <= 5 %, jaune 5-10 %,
   rouge > 10 %). KPI d'avancement.
 - 7 nouveaux tests pytest (229/229 verts).
+
+### Module B+ — Stock cables (auto-suivi)
+
+- Modele ``CableStockItem`` + table ``cable_stock_items`` (migration 011) :
+  une reference par (project, type_cable, section_label, ame), avec
+  ``quantite_achetee`` (RA), ``quantite_livree`` (Chef) et ``seuil_alerte_min_m``.
+- ``quantite_utilisee`` calculee en direct depuis les ``field_entries`` du
+  projet, ventilee selon la decomposition CANECO (memes regles que le
+  carnet de cables) : une saisie sur ``3X(1x150)`` 100 m alimente
+  automatiquement la reference ``1*150 mm² Alu`` a hauteur de 300 m.
+- Endpoints ``GET / PUT / DELETE /api/projects/{id}/cable-stock`` ; le seuil
+  d'alerte est configurable par reference.
+- Front : nouvel onglet « Stock cables » avec inputs editables (achete,
+  livre, seuil), reste calcule, ligne ``ring`` rouge VINCI si en alerte,
+  badge de notification sur l'onglet, tri (alertes en haut, sinon par
+  section croissante). 9 nouveaux tests pytest (238/238 verts).
+
+### Saisie chantier — regles metier
+
+- Commentaire **obligatoire** quand la longueur reelle = 0 (circuit non tire)
+  ou quand l'ecart absolu vs prevu depasse 50 %. Validation cote backend
+  (422) et cote front (bouton bloque + message clair + champ commentaire
+  ouvert automatiquement). Garantit la tracabilite pour le BE / RA.
+
+### Permissions par role
+
+- Le Chef de Chantier ne voit plus les onglets Bordereau / CPS / Verifications
+  (reserves au dossier d'etudes BE / RA / admin). Onglet par defaut a
+  l'ouverture d'un projet : Saisie chantier pour le Chef.
+- Helper centralise ``app/api/access.py`` (lecture / ecriture etudes) pour
+  factoriser le controle d'acces et separer proprement les permissions par
+  role.
+
+### Responsive mobile + accent rouge VINCI
+
+- Layout : sidebar transformee en drawer (menu hamburger) sur mobile, fixe
+  sur desktop (md+). Header adapte aux petits ecrans (titre raccourci,
+  logo redimensionne).
+- Barre d'onglets ProjectPage : scroll horizontal fluide sur mobile,
+  scrollbar masquee (utilitaire ``.scrollbar-none``).
+- Couleur rouge VINCI utilisee comme accent strategique (souligne d'onglet
+  actif, bouton bloque pour commentaire manquant, badge d'alerte, alertes
+  stock) tout en gardant le bleu VINCI comme couleur de structure.
