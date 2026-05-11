@@ -51,3 +51,14 @@
     line-height: 1.5;
   }
 }
+
+@layer utilities {
+  /* Masque la scrollbar tout en gardant le scroll (utile pour les barres
+     d'onglets glissables sur mobile). */
+  .scrollbar-none {
+    scrollbar-width: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+}

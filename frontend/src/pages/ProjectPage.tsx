@@ -50,6 +50,11 @@ import {
 } from "@/api/cable_book";
 import { deleteFieldEntry, upsertFieldEntry } from "@/api/field_entries";
 import {
+  deleteCableStockItem,
+  getCableStock,
+  upsertCableStock,
+} from "@/api/cable_stock";
+import {
   downloadFichePdf,
   downloadLabelsPdf,
   fetchTableauQrObjectUrl,
@@ -66,6 +71,7 @@ import {
   getVerificationRun,
   updateGapStatus,
 } from "@/api/verification";
+import { useAuth } from "@/context/AuthContext";
 import { cn } from "@/lib/utils";
 import type {
   BordereauDetail,
@@ -186,8 +192,16 @@ const TABS = [
   { id: "cable-book", label: "Carnet cables" },
   { id: "tableaux", label: "Tableaux" },
   { id: "saisie-chantier", label: "Saisie chantier" },
+  { id: "stock-cables", label: "Stock cables" },
   { id: "doe", label: "DOE" },
 ] as const;
+
+// Onglets caches au Chef de Chantier (reserves au dossier d'etudes : BE / RA / admin)
+const TABS_HIDDEN_FOR_CHEF: ReadonlySet<TabId> = new Set([
+  "bordereau",
+  "cps",
+  "verifications",
+]);
 
 type TabId = (typeof TABS)[number]["id"];
 
@@ -208,7 +222,14 @@ export default function ProjectPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState<TabId>("overview");
+  const { user } = useAuth();
+  const isChef = user?.role === "chef_chantier";
+  const visibleTabs = TABS.filter(
+    (t) => !isChef || !TABS_HIDDEN_FOR_CHEF.has(t.id)
+  );
+  const [activeTab, setActiveTab] = useState<TabId>(
+    isChef ? "saisie-chantier" : "overview"
+  );
   const [showEdit, setShowEdit] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [editData, setEditData] = useState<ProjectUpdate>({});
@@ -327,21 +348,24 @@ export default function ProjectPage() {
         </div>
       </div>
 
-      {/* Onglets — epingles, ne scrollent jamais */}
-      <div className="shrink-0 border-b border-border-std bg-white px-6">
-        <div className="flex gap-0">
-          {TABS.map((tab) => (
+      {/* Onglets — epingles, scroll horizontal sur mobile */}
+      <div className="shrink-0 border-b border-border-std bg-white">
+        <div className="flex gap-0 overflow-x-auto scrollbar-none px-3 sm:px-6">
+          {visibleTabs.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={cn(
-                "px-4 py-3 text-sm border-b-2 transition-colors",
+                "shrink-0 px-3 sm:px-4 py-3 text-xs sm:text-sm border-b-2 transition-colors whitespace-nowrap flex items-center gap-1.5",
                 activeTab === tab.id
-                  ? "border-vinci-blue text-vinci-blue font-medium"
+                  ? "border-vinci-red text-vinci-blue font-medium"
                   : "border-transparent text-text-secondary hover:text-text-primary"
               )}
             >
               {tab.label}
+              {tab.id === "stock-cables" && (
+                <StockAlertBadge projectId={id!} />
+              )}
             </button>
           ))}
         </div>
@@ -396,6 +420,8 @@ export default function ProjectPage() {
         {activeTab === "tableaux" && <TableauxTab projectId={id!} />}
 
         {activeTab === "saisie-chantier" && <SaisieChantierTab projectId={id!} />}
+
+        {activeTab === "stock-cables" && <StockCablesTab projectId={id!} />}
         {activeTab === "doe" && (
           <div className="flex-1 min-h-0 overflow-auto p-6">
             <div className="text-sm text-text-tertiary">
@@ -4669,9 +4695,12 @@ function DepartSaisieRow({
 }) {
   const prev = depart.longueur;
   const real = depart.longueur_realisee;
+
+  // Valeur en cours d'edition (priorite au brouillon)
+  const editingValue = draftVal !== "" ? Number(draftVal.replace(",", ".")) : real;
   const ecart =
-    real != null && prev != null && prev > 0
-      ? ((real - prev) / prev) * 100
+    editingValue != null && prev != null && prev > 0 && !Number.isNaN(editingValue)
+      ? ((editingValue - prev) / prev) * 100
       : null;
   const ecartColor =
     ecart == null
@@ -4680,11 +4709,27 @@ function DepartSaisieRow({
       ? "text-green-700 bg-green-50"
       : Math.abs(ecart) <= 10
       ? "text-yellow-800 bg-yellow-50"
-      : "text-status-warn bg-red-50";
+      : "text-white bg-vinci-red";
+
+  // Regle metier : commentaire obligatoire si reel = 0 ou ecart > 50 %
+  const commentRequired =
+    prev != null &&
+    prev > 0 &&
+    editingValue != null &&
+    !Number.isNaN(editingValue) &&
+    (editingValue === 0 || Math.abs(ecart ?? 0) > 50);
+
+  const effectiveComment =
+    commentVal !== "" ? commentVal : depart.commentaire_chantier ?? "";
+  const commentMissing = commentRequired && !effectiveComment.trim();
 
   const [showComment, setShowComment] = useState(
     Boolean(depart.commentaire_chantier)
   );
+  // Ouvre auto le champ commentaire si la regle l'exige
+  useEffect(() => {
+    if (commentRequired) setShowComment(true);
+  }, [commentRequired]);
 
   return (
     <div className="px-3 sm:px-4 py-3 bg-white">
@@ -4719,7 +4764,7 @@ function DepartSaisieRow({
         />
         <span className="text-xs text-text-tertiary">m</span>
 
-        {ecart != null && draftVal === "" && (
+        {ecart != null && (
           <span
             className={cn(
               "text-[11px] font-medium px-2 py-0.5 rounded",
@@ -4742,10 +4787,14 @@ function DepartSaisieRow({
         <button
           type="button"
           onClick={onSave}
-          disabled={saving || draftVal === ""}
+          disabled={saving || draftVal === "" || commentMissing}
+          title={commentMissing ? "Commentaire obligatoire" : undefined}
           className={cn(
-            "px-3 py-1.5 text-xs rounded bg-vinci-blue text-white",
-            "hover:bg-vinci-blue/90 disabled:opacity-50 disabled:cursor-not-allowed"
+            "px-3 py-1.5 text-xs rounded text-white",
+            commentMissing
+              ? "bg-vinci-red/70 cursor-not-allowed"
+              : "bg-vinci-blue hover:bg-vinci-blue/90",
+            "disabled:opacity-50 disabled:cursor-not-allowed"
           )}
         >
           {saving ? "..." : real != null ? "Mettre a jour" : "Enregistrer"}
@@ -4764,17 +4813,378 @@ function DepartSaisieRow({
       </div>
 
       {showComment && (
-        <textarea
-          value={
-            commentVal !== ""
-              ? commentVal
-              : depart.commentaire_chantier ?? ""
-          }
-          onChange={(e) => onCommentChange(e.target.value)}
-          placeholder="Justification (passage detourne, IPN, reserve...)"
-          className="mt-2 w-full border border-border-std rounded px-2 py-1.5 text-xs resize-y min-h-[40px] focus:outline-none focus:ring-2 focus:ring-vinci-blue/30"
-          rows={2}
+        <>
+          {commentRequired && (
+            <p className="mt-2 text-[11px] text-vinci-red font-medium">
+              Commentaire obligatoire :{" "}
+              {editingValue === 0
+                ? "circuit non tire"
+                : "ecart au-dela de 50 % du prevu"}
+              . Justifiez la situation pour que le BE et le RA en soient informes.
+            </p>
+          )}
+          <textarea
+            value={effectiveComment}
+            onChange={(e) => onCommentChange(e.target.value)}
+            placeholder="Justification (passage detourne, IPN, reserve...)"
+            className={cn(
+              "mt-2 w-full border rounded px-2 py-1.5 text-xs resize-y min-h-[40px]",
+              "focus:outline-none focus:ring-2",
+              commentMissing
+                ? "border-vinci-red/60 focus:ring-vinci-red/30"
+                : "border-border-std focus:ring-vinci-blue/30"
+            )}
+            rows={2}
+          />
+        </>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Module B+ — Stock cables (auto-calcul depuis la saisie chantier)
+// ---------------------------------------------------------------------------
+
+/** Badge rouge VINCI sur l'onglet Stock quand il y a des alertes actives. */
+function StockAlertBadge({ projectId }: { projectId: string }) {
+  const { data } = useQuery({
+    queryKey: ["cable-stock", projectId],
+    queryFn: () => getCableStock(projectId),
+  });
+  if (!data || data.nb_alertes === 0) return null;
+  return (
+    <span
+      className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-vinci-red text-white text-[10px] font-bold leading-none"
+      title={`${data.nb_alertes} reference(s) en alerte`}
+    >
+      {data.nb_alertes}
+    </span>
+  );
+}
+
+function StockCablesTab({ projectId }: { projectId: string }) {
+  const queryClient = useQueryClient();
+  const [filter, setFilter] = useState("");
+  const [drafts, setDrafts] = useState<
+    Record<string, { achete?: string; livre?: string; seuil?: string }>
+  >({});
+  const [savingKey, setSavingKey] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ["cable-stock", projectId],
+    queryFn: () => getCableStock(projectId),
+  });
+
+  if (isLoading) {
+    return (
+      <div className="flex-1 min-h-0 overflow-auto p-6">
+        <p className="text-sm text-text-tertiary">Chargement du stock...</p>
+      </div>
+    );
+  }
+  if (isError || !data) {
+    return (
+      <div className="flex-1 min-h-0 overflow-auto p-6">
+        <p className="text-sm text-status-warn">
+          Impossible de charger le stock.
+        </p>
+      </div>
+    );
+  }
+
+  const items = data.items
+    .filter((it) => {
+      if (!filter.trim()) return true;
+      const q = filter.toUpperCase();
+      return (
+        it.type_cable.toUpperCase().includes(q) ||
+        it.section_label.toUpperCase().includes(q) ||
+        it.ame.toUpperCase().includes(q)
+      );
+    })
+    // Alertes en haut, puis section croissante
+    .sort((a, b) => {
+      if (a.en_alerte !== b.en_alerte) return a.en_alerte ? -1 : 1;
+      return (a.section_mm2 ?? 0) - (b.section_mm2 ?? 0);
+    });
+
+  function rowKey(it: (typeof items)[number]) {
+    return `${it.type_cable}|${it.section_label}|${it.ame}`;
+  }
+
+  async function save(it: (typeof items)[number]) {
+    setErrorMsg(null);
+    const k = rowKey(it);
+    const draft = drafts[k] ?? {};
+    const num = (v: string | undefined) =>
+      v === undefined || v.trim() === "" ? null : Number(v.replace(",", "."));
+    const payload = {
+      type_cable: it.type_cable,
+      section_label: it.section_label,
+      ame: it.ame,
+      section_mm2: it.section_mm2,
+      quantite_achetee: num(draft.achete),
+      quantite_livree: num(draft.livre),
+      seuil_alerte_min_m: num(draft.seuil),
+    };
+    if (
+      [
+        payload.quantite_achetee,
+        payload.quantite_livree,
+        payload.seuil_alerte_min_m,
+      ].some((v) => v !== null && (Number.isNaN(v) || (v as number) < 0))
+    ) {
+      setErrorMsg("Valeurs invalides : utiliser des nombres positifs.");
+      return;
+    }
+    setSavingKey(k);
+    try {
+      await upsertCableStock(projectId, payload);
+      queryClient.invalidateQueries({ queryKey: ["cable-stock", projectId] });
+      setDrafts((p) => {
+        const n = { ...p };
+        delete n[k];
+        return n;
+      });
+    } catch {
+      setErrorMsg("Echec de l'enregistrement.");
+    } finally {
+      setSavingKey(null);
+    }
+  }
+
+  async function remove(it: (typeof items)[number]) {
+    if (!it.item_id) return;
+    setSavingKey(rowKey(it));
+    try {
+      await deleteCableStockItem(projectId, it.item_id);
+      queryClient.invalidateQueries({ queryKey: ["cable-stock", projectId] });
+    } catch {
+      setErrorMsg("Echec de la suppression.");
+    } finally {
+      setSavingKey(null);
+    }
+  }
+
+  return (
+    <div className="flex-1 min-h-0 overflow-auto p-4 sm:p-6 space-y-4">
+      <div className="bg-vinci-blue/5 border border-vinci-blue/20 rounded p-3 text-xs text-vinci-blue">
+        Le stock s'actualise automatiquement a chaque saisie chantier (longueurs
+        reelles ventilees par section). Renseignez la quantite achetee (RA) et
+        livree (Chef), ainsi qu'un seuil minimum pour declencher une alerte
+        quand le stock devient critique.
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <KpiCard
+          label="References"
+          value={data.nb_references}
+          color="text-vinci-blue"
+          bg="bg-vinci-blue/5 border-vinci-blue/20"
         />
+        <KpiCard
+          label="Achete (total)"
+          value={`${formatMeters(data.quantite_achetee_totale)} m`}
+          color="text-text-primary"
+          bg="bg-bg-cell border-border-std"
+        />
+        <KpiCard
+          label="Utilise (total)"
+          value={`${formatMeters(data.quantite_utilisee_totale)} m`}
+          color="text-text-primary"
+          bg="bg-bg-cell border-border-std"
+        />
+        <KpiCard
+          label="Alertes"
+          value={data.nb_alertes}
+          color={data.nb_alertes > 0 ? "text-white" : "text-text-primary"}
+          bg={
+            data.nb_alertes > 0
+              ? "bg-vinci-red border-vinci-red"
+              : "bg-bg-cell border-border-std"
+          }
+        />
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          type="text"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          placeholder="Filtrer par type / section / ame"
+          className="text-xs border border-border-std rounded px-2 py-1.5 bg-white flex-1 min-w-[200px]"
+        />
+      </div>
+
+      {errorMsg && (
+        <div className="text-xs text-vinci-red bg-red-50 border border-vinci-red/30 rounded px-3 py-2">
+          {errorMsg}
+        </div>
+      )}
+
+      {items.length === 0 ? (
+        <div className="border border-dashed border-border-std rounded p-6 text-center">
+          <p className="text-sm text-text-secondary">
+            Aucune reference. Le stock se remplira automatiquement des la
+            premiere saisie chantier, ou vous pouvez en ajouter manuellement.
+          </p>
+        </div>
+      ) : (
+        <div className="border border-border-std rounded bg-white overflow-x-auto">
+          <table className="w-full text-xs min-w-[760px]">
+            <thead
+              className="sticky top-0 z-10"
+              style={{ backgroundColor: "#001E50" }}
+            >
+              <tr>
+                <th className="px-2 sm:px-3 py-2 text-left font-medium text-white/90">
+                  Type cable
+                </th>
+                <th className="px-2 sm:px-3 py-2 text-left font-medium text-white/90">
+                  Section
+                </th>
+                <th className="px-2 sm:px-3 py-2 text-left font-medium text-white/90 hidden sm:table-cell">
+                  Ame
+                </th>
+                <th className="px-2 sm:px-3 py-2 text-right font-medium text-white/90 w-[110px]">
+                  Achete (m)
+                </th>
+                <th className="px-2 sm:px-3 py-2 text-right font-medium text-white/90 w-[110px]">
+                  Livre (m)
+                </th>
+                <th className="px-2 sm:px-3 py-2 text-right font-medium text-white/90 w-[100px]">
+                  Utilise (m)
+                </th>
+                <th className="px-2 sm:px-3 py-2 text-right font-medium text-white/90 w-[100px]">
+                  Reste (m)
+                </th>
+                <th className="px-2 sm:px-3 py-2 text-right font-medium text-white/90 w-[100px]">
+                  Seuil (m)
+                </th>
+                <th className="px-2 sm:px-3 py-2 text-right font-medium text-white/90 w-[130px]">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((it, i) => {
+                const k = rowKey(it);
+                const draft = drafts[k] ?? {};
+                const dirty =
+                  draft.achete !== undefined ||
+                  draft.livre !== undefined ||
+                  draft.seuil !== undefined;
+                return (
+                  <tr
+                    key={k}
+                    className={cn(
+                      i % 2 === 0 ? "bg-white" : "bg-bg-cell",
+                      it.en_alerte && "ring-1 ring-vinci-red/40"
+                    )}
+                  >
+                    <td className="px-2 sm:px-3 py-1.5 text-text-secondary">
+                      {it.type_cable}
+                    </td>
+                    <td className="px-2 sm:px-3 py-1.5 font-mono text-text-primary">
+                      {it.section_label}
+                    </td>
+                    <td className="px-2 sm:px-3 py-1.5 text-text-tertiary hidden sm:table-cell">
+                      {it.ame || "—"}
+                    </td>
+                    <td className="px-2 py-1">
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        min="0"
+                        step="0.1"
+                        value={draft.achete ?? String(it.quantite_achetee)}
+                        onChange={(e) =>
+                          setDrafts((p) => ({
+                            ...p,
+                            [k]: { ...p[k], achete: e.target.value },
+                          }))
+                        }
+                        className="w-full border border-border-std rounded px-1.5 py-1 text-xs text-right focus:outline-none focus:ring-2 focus:ring-vinci-blue/30"
+                      />
+                    </td>
+                    <td className="px-2 py-1">
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        min="0"
+                        step="0.1"
+                        value={draft.livre ?? String(it.quantite_livree)}
+                        onChange={(e) =>
+                          setDrafts((p) => ({
+                            ...p,
+                            [k]: { ...p[k], livre: e.target.value },
+                          }))
+                        }
+                        className="w-full border border-border-std rounded px-1.5 py-1 text-xs text-right focus:outline-none focus:ring-2 focus:ring-vinci-blue/30"
+                      />
+                    </td>
+                    <td className="px-2 sm:px-3 py-1.5 text-right font-medium text-text-primary">
+                      {formatMeters(it.quantite_utilisee)}
+                    </td>
+                    <td
+                      className={cn(
+                        "px-2 sm:px-3 py-1.5 text-right font-medium",
+                        it.en_alerte ? "text-vinci-red" : "text-text-primary"
+                      )}
+                    >
+                      {formatMeters(it.stock_restant)}
+                    </td>
+                    <td className="px-2 py-1">
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        min="0"
+                        step="0.1"
+                        value={draft.seuil ?? String(it.seuil_alerte_min_m)}
+                        onChange={(e) =>
+                          setDrafts((p) => ({
+                            ...p,
+                            [k]: { ...p[k], seuil: e.target.value },
+                          }))
+                        }
+                        className="w-full border border-border-std rounded px-1.5 py-1 text-xs text-right focus:outline-none focus:ring-2 focus:ring-vinci-blue/30"
+                      />
+                    </td>
+                    <td className="px-2 sm:px-3 py-1 text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        <button
+                          type="button"
+                          onClick={() => save(it)}
+                          disabled={savingKey === k || !dirty}
+                          className={cn(
+                            "px-2 py-1 text-xs rounded text-white",
+                            "bg-vinci-blue hover:bg-vinci-blue/90",
+                            "disabled:opacity-40 disabled:cursor-not-allowed"
+                          )}
+                        >
+                          {savingKey === k ? "..." : "OK"}
+                        </button>
+                        {it.item_id && (
+                          <button
+                            type="button"
+                            onClick={() => remove(it)}
+                            disabled={savingKey === k}
+                            title="Supprimer la reference"
+                            className="px-2 py-1 text-xs rounded border border-border-std text-text-tertiary hover:text-vinci-red hover:border-vinci-red/40"
+                          >
+                            <X size={12} />
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );

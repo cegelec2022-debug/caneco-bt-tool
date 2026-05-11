@@ -310,6 +310,41 @@ export interface FieldEntryUpsert {
   commentaire?: string | null;
 }
 
+// --- Stock cables ---------------------------------------------------------
+
+export interface CableStockItemRow {
+  item_id: string | null;
+  type_cable: string;
+  section_label: string;
+  ame: string;
+  section_mm2: number | null;
+  quantite_achetee: number;
+  quantite_livree: number;
+  quantite_utilisee: number;
+  stock_restant: number;
+  seuil_alerte_min_m: number;
+  en_alerte: boolean;
+}
+
+export interface CableStockReport {
+  items: CableStockItemRow[];
+  nb_references: number;
+  nb_alertes: number;
+  quantite_achetee_totale: number;
+  quantite_livree_totale: number;
+  quantite_utilisee_totale: number;
+}
+
+export interface CableStockUpsert {
+  type_cable: string;
+  section_label: string;
+  ame?: string;
+  section_mm2?: number | null;
+  quantite_achetee?: number | null;
+  quantite_livree?: number | null;
+  seuil_alerte_min_m?: number | null;
+}
+
 export interface CarnetTableau {
   repere: string;
   designation: string | null;
