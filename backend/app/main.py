@@ -10,6 +10,7 @@ from app.api.routers import (
     cable_stock,
     caneco,
     cps,
+    dashboard,
     field_entry,
     projects,
     public,
@@ -52,6 +53,7 @@ app.include_router(cable_book.router)
 app.include_router(tableau.router)
 app.include_router(field_entry.router)
 app.include_router(cable_stock.router)
+app.include_router(dashboard.router)
 app.include_router(public.router)
 
 

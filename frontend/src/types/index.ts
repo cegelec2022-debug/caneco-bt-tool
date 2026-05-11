@@ -335,6 +335,40 @@ export interface CableStockReport {
   quantite_utilisee_totale: number;
 }
 
+// --- Tableau de bord RA ---------------------------------------------------
+
+export interface DashboardProjectSummary {
+  id: string;
+  code: string;
+  name: string;
+  client: string | null;
+  agency: string | null;
+  status: string;
+  indice_caneco: string | null;
+  nb_tableaux: number;
+  nb_circuits: number;
+  nb_circuits_saisis: number;
+  avancement_pct: number;
+  longueur_prevue_m: number;
+  longueur_realisee_m: number;
+  nb_ecarts_ouverts: number;
+  nb_ecarts_bloquants: number;
+  nb_alertes_stock: number;
+  derniere_activite: string | null;
+}
+
+export interface DashboardSummary {
+  nb_projets: number;
+  nb_projets_actifs: number;
+  nb_ecarts_ouverts_total: number;
+  nb_ecarts_bloquants_total: number;
+  nb_alertes_stock_total: number;
+  avancement_moyen_pct: number;
+  longueur_prevue_totale_m: number;
+  longueur_realisee_totale_m: number;
+  projets: DashboardProjectSummary[];
+}
+
 export interface CableStockUpsert {
   type_cable: string;
   section_label: string;

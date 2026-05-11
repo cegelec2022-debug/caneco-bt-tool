@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import Layout from "@/components/Layout";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import { AuthProvider } from "@/context/AuthContext";
+import DashboardPage from "@/pages/DashboardPage";
 import FicheTableauPublic from "@/pages/FicheTableauPublic";
 import LoginPage from "@/pages/LoginPage";
 import ProjectPage from "@/pages/ProjectPage";
@@ -25,6 +26,7 @@ export default function App() {
           <Route index element={<Navigate to="/projects" replace />} />
           <Route path="projects" element={<ProjectsPage />} />
           <Route path="projects/:id" element={<ProjectPage />} />
+          <Route path="dashboard" element={<DashboardPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
