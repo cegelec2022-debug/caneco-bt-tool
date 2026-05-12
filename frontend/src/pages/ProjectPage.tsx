@@ -26,18 +26,23 @@ import {
   deleteBordereau,
   getBordereau,
   listBordereau,
+  previewBordereauSheets,
   updateBordereauIndice,
   uploadBordereau,
 } from "@/api/bordereau";
+import { deleteCpsImport, getCpsImport, listCpsImports, uploadCps } from "@/api/cps";
 import { deleteProject, getProject, updateProject } from "@/api/projects";
 import { cn } from "@/lib/utils";
 import type {
   BordereauDetail,
   BordereauImport,
   BordereauSection,
+  BordereauSheetPreview,
   CanecoExport,
   CanecoExportDetail,
   CanecoLine,
+  CpsImport,
+  CpsRule,
   ProjectUpdate,
 } from "@/types";
 
@@ -135,6 +140,7 @@ const TABS = [
   { id: "overview", label: "Vue d'ensemble" },
   { id: "studies", label: "Etudes" },
   { id: "bordereau", label: "Bordereau" },
+  { id: "cps", label: "CPS" },
   { id: "tableaux", label: "Tableaux" },
   { id: "doe", label: "DOE" },
 ] as const;
@@ -324,6 +330,8 @@ export default function ProjectPage() {
         {activeTab === "studies" && <EtudesTab projectId={id!} />}
 
         {activeTab === "bordereau" && <BordereauTab projectId={id!} />}
+
+        {activeTab === "cps" && <CpsTab projectId={id!} />}
 
         {activeTab === "tableaux" && (
           <div className="flex-1 min-h-0 overflow-auto p-6">
@@ -1560,6 +1568,14 @@ function BordereauTab({ projectId }: { projectId: string }) {
               </span>
               <span className="text-text-tertiary shrink-0">·</span>
               <span className="truncate text-text-tertiary">{selectedImport.file_name}</span>
+              {selectedImport.sheet_name && (
+                <>
+                  <span className="text-text-tertiary shrink-0">·</span>
+                  <span className="truncate text-text-tertiary shrink-0 font-mono text-xs">
+                    {selectedImport.sheet_name}
+                  </span>
+                </>
+              )}
             </div>
             <div className="flex items-center gap-2 shrink-0">
               <button
@@ -1774,7 +1790,12 @@ function BdpImportCard({
                 </span>
               )}
             </div>
-            <p className="text-xs text-text-tertiary mt-0.5 truncate">{imp.file_name}</p>
+            <p className="text-xs text-text-tertiary mt-0.5 truncate">
+              {imp.file_name}
+              {imp.sheet_name && (
+                <span className="ml-1.5 font-mono text-text-tertiary/70">({imp.sheet_name})</span>
+              )}
+            </p>
             {imp.status === "error" && imp.error_message && (
               <p className="text-xs text-status-warn mt-0.5 truncate">{imp.error_message}</p>
             )}
@@ -2024,10 +2045,13 @@ function BdpUploadForm({
   const [indice, setIndice] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [sheetPreview, setSheetPreview] = useState<BordereauSheetPreview | null>(null);
+  const [selectedSheet, setSelectedSheet] = useState("");
+  const [loadingSheets, setLoadingSheets] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const { mutate: doUpload, isPending } = useMutation({
-    mutationFn: () => uploadBordereau(projectId, file!, indice),
+    mutationFn: () => uploadBordereau(projectId, file!, indice, selectedSheet),
     onSuccess: (imp) => onDone(imp),
     onError: (err: unknown) => {
       const msg =
@@ -2037,21 +2061,39 @@ function BdpUploadForm({
     },
   });
 
-  const handleFile = useCallback((f: File) => {
-    const ext = f.name.split(".").pop()?.toLowerCase();
-    if (ext !== "xlsx") {
-      setError("Le bordereau doit etre en format .xlsx.");
-      return;
-    }
-    if (f.size > 50 * 1024 * 1024) {
-      setError("Fichier trop volumineux (max 50 Mo).");
-      return;
-    }
-    setFile(f);
-    setError(null);
-    const detected = detectIndiceFromFilename(f.name);
-    if (detected) setIndice(detected);
-  }, []);
+  const handleFile = useCallback(
+    async (f: File) => {
+      const ext = f.name.split(".").pop()?.toLowerCase();
+      if (ext !== "xlsx") {
+        setError("Le bordereau doit etre en format .xlsx.");
+        return;
+      }
+      if (f.size > 50 * 1024 * 1024) {
+        setError("Fichier trop volumineux (max 50 Mo).");
+        return;
+      }
+      setFile(f);
+      setError(null);
+      const detected = detectIndiceFromFilename(f.name);
+      if (detected) setIndice(detected);
+
+      // Charger les feuilles disponibles
+      setLoadingSheets(true);
+      setSheetPreview(null);
+      try {
+        const preview = await previewBordereauSheets(projectId, f);
+        setSheetPreview(preview);
+        setSelectedSheet(preview.detected ?? preview.sheets[0] ?? "");
+      } catch {
+        // En cas d'erreur, continuer sans selection de feuille (auto-detection)
+        setSheetPreview(null);
+        setSelectedSheet("");
+      } finally {
+        setLoadingSheets(false);
+      }
+    },
+    [projectId]
+  );
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
@@ -2073,10 +2115,11 @@ function BdpUploadForm({
   return (
     <div className="border border-border-std rounded bg-white p-5">
       <h4 className="text-sm font-semibold text-text-primary mb-4">
-        Importer un bordereau de prix (feuille BDP_ELECTRICITE CFO)
+        Importer un bordereau de prix
       </h4>
 
       <form onSubmit={handleSubmit} className="space-y-4">
+        {/* Zone de depot fichier */}
         <div
           onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
           onDragLeave={() => setIsDragging(false)}
@@ -2110,6 +2153,57 @@ function BdpUploadForm({
           )}
         </div>
 
+        {/* Choix de la feuille — s'affiche apres chargement des feuilles */}
+        {loadingSheets && (
+          <div className="flex items-center gap-2 text-xs text-text-tertiary">
+            <span className="inline-block w-3 h-3 border-2 border-vinci-blue/30 border-t-vinci-blue rounded-full animate-spin" />
+            Lecture des feuilles...
+          </div>
+        )}
+
+        {sheetPreview && (
+          <div className="space-y-2">
+            <label className="block text-sm text-text-secondary">
+              Feuille a analyser
+            </label>
+            <div className="flex flex-wrap gap-2">
+              {sheetPreview.sheets.map((sheet) => {
+                const isRecommended = sheet === sheetPreview.detected;
+                const isSelected = sheet === selectedSheet;
+                return (
+                  <button
+                    key={sheet}
+                    type="button"
+                    onClick={() => setSelectedSheet(sheet)}
+                    className={cn(
+                      "px-3 py-1.5 text-xs rounded border transition-colors",
+                      isSelected
+                        ? "bg-vinci-blue text-white border-vinci-blue"
+                        : "bg-white text-text-secondary border-border-std hover:border-vinci-blue/50"
+                    )}
+                  >
+                    {sheet}
+                    {isRecommended && !isSelected && (
+                      <span className="ml-1.5 text-status-ok">(recommandee)</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            {selectedSheet && selectedSheet !== sheetPreview.detected && (
+              <p className="text-xs text-yellow-700 bg-yellow-50 border border-yellow-200 rounded px-3 py-1.5">
+                Feuille non electrique selectionnee — le parser tentera de trouver les articles (N°Prix, Designation, Qte).
+              </p>
+            )}
+            {selectedSheet === sheetPreview.detected && (
+              <p className="text-xs text-status-ok">
+                Feuille recommandee — detection automatique confirmee.
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Indice optionnel */}
         <div className="flex items-center gap-3">
           <label className="text-sm text-text-secondary shrink-0 w-32">Indice (optionnel)</label>
           <input
@@ -2140,7 +2234,7 @@ function BdpUploadForm({
           </button>
           <button
             type="submit"
-            disabled={isPending || !file}
+            disabled={isPending || !file || loadingSheets}
             className="flex items-center gap-2 px-4 py-2 text-sm bg-vinci-blue text-white rounded hover:bg-vinci-blue/90 transition-colors disabled:opacity-50"
           >
             {isPending ? (
@@ -2151,6 +2245,373 @@ function BdpUploadForm({
           </button>
         </div>
       </form>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Onglet CPS
+// ---------------------------------------------------------------------------
+
+const RULE_TYPE_LABELS: Record<string, string> = {
+  section_minimale: "Section minimale",
+  section_pe: "Section PE/PEN",
+  chute_tension_max: "Chute de tension",
+  type_cable_requis: "Type de cable",
+  cable_resistance_feu: "Cable resistant au feu",
+  ddr_sensibilite: "DDR - Sensibilite",
+  ddr_type: "DDR - Type",
+  disjoncteur_kind: "Disjoncteur",
+  schema_mise_terre: "Schema mise a la terre",
+  alimentation_secourue: "Alimentation secouree",
+  protection_surtension: "Protection surtension",
+  marque_imposee: "Marque preconisee",
+  securite_incendie: "Securite incendie",
+  indice_protection: "Indice de protection",
+  indice_choc: "Indice de choc",
+  resistance_isolement: "Resistance d'isolement",
+  classe_isolation: "Classe d'isolation",
+  condition_environnementale: "Conditions environnementales",
+  canalisation_enterree: "Canalisations enterrees",
+  selectivite: "Selectivite",
+};
+
+function ruleTypeLabel(rt: string): string {
+  return RULE_TYPE_LABELS[rt] ?? rt;
+}
+
+function confidenceBadge(c: number) {
+  if (c >= 0.9) return "bg-green-100 text-green-800 border-green-200";
+  if (c >= 0.75) return "bg-yellow-100 text-yellow-800 border-yellow-200";
+  return "bg-gray-100 text-gray-600 border-gray-200";
+}
+
+function CpsRuleRow({ rule, onShowExcerpt }: { rule: CpsRule; onShowExcerpt: (r: CpsRule) => void }) {
+  return (
+    <tr className="hover:bg-bg-cell transition-colors">
+      <td className="px-3 py-2 text-xs text-text-secondary whitespace-nowrap">
+        {ruleTypeLabel(rule.rule_type)}
+        {rule.context_label && (
+          <span className="ml-1 text-text-tertiary">({rule.context_label})</span>
+        )}
+      </td>
+      <td className="px-3 py-2 font-mono text-sm font-medium text-text-primary">
+        {rule.value}
+        {rule.unit && <span className="ml-1 text-text-secondary text-xs">{rule.unit}</span>}
+      </td>
+      <td className="px-3 py-2 text-xs text-text-secondary max-w-xs truncate">
+        {rule.description}
+      </td>
+      <td className="px-3 py-2 text-xs text-center text-text-tertiary">{rule.source_page}</td>
+      <td className="px-3 py-2 text-center">
+        <span className={cn("text-xs px-2 py-0.5 rounded border", confidenceBadge(rule.confidence))}>
+          {Math.round(rule.confidence * 100)}%
+        </span>
+      </td>
+      <td className="px-3 py-2 text-center">
+        {rule.source_excerpt ? (
+          <button
+            onClick={() => onShowExcerpt(rule)}
+            className="text-xs text-vinci-blue hover:underline"
+          >
+            Voir extrait
+          </button>
+        ) : (
+          <span className="text-text-tertiary text-xs">—</span>
+        )}
+      </td>
+    </tr>
+  );
+}
+
+function CpsTab({ projectId }: { projectId: string }) {
+  const queryClient = useQueryClient();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [selectedImport, setSelectedImport] = useState<CpsImport | null>(null);
+  const [excerptRule, setExcerptRule] = useState<CpsRule | null>(null);
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  const { data: imports = [], isLoading } = useQuery({
+    queryKey: ["cps-imports", projectId],
+    queryFn: () => listCpsImports(projectId),
+  });
+
+  const { data: detail } = useQuery({
+    queryKey: ["cps-import-detail", projectId, selectedImport?.id],
+    queryFn: () => getCpsImport(projectId, selectedImport!.id),
+    enabled: !!selectedImport && selectedImport.status === "parsed",
+  });
+
+  const { mutate: doUpload, isPending: isUploading } = useMutation({
+    mutationFn: (file: File) => uploadCps(projectId, file),
+    onSuccess: (created) => {
+      queryClient.invalidateQueries({ queryKey: ["cps-imports", projectId] });
+      setSelectedImport(created);
+      setUploadError(null);
+    },
+    onError: (err: unknown) => {
+      const msg =
+        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
+        "Erreur lors de l'upload.";
+      setUploadError(msg);
+    },
+  });
+
+  const { mutate: doDelete } = useMutation({
+    mutationFn: (importId: string) => deleteCpsImport(projectId, importId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["cps-imports", projectId] });
+      if (selectedImport?.id === deleteTargetId) setSelectedImport(null);
+      setDeleteTargetId(null);
+    },
+  });
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith(".pdf")) {
+      setUploadError("Seuls les fichiers PDF sont acceptes.");
+      return;
+    }
+    setUploadError(null);
+    doUpload(file);
+    e.target.value = "";
+  }
+
+  const rules = detail?.rules ?? [];
+
+  const grouped = rules.reduce<Record<string, CpsRule[]>>((acc, r) => {
+    if (!acc[r.rule_type]) acc[r.rule_type] = [];
+    acc[r.rule_type].push(r);
+    return acc;
+  }, {});
+
+  return (
+    <div className="flex-1 min-h-0 flex flex-col p-6 gap-5">
+      {/* Zone fixe : banniere + controles + cartes d'import */}
+      <div className="shrink-0 space-y-4">
+        <div className="text-xs text-text-secondary bg-blue-50 border border-blue-200 rounded px-4 py-2.5">
+          Extraction deterministe V1 — les regles marquees "a valider" necessitent une verification
+          manuelle par le BE. La version V2 utilisera un LLM pour ameliorer la precision.
+        </div>
+
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-text-primary">
+            CPS — Cahier des Prescriptions Speciales
+          </h2>
+          <div className="flex items-center gap-2">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf"
+              className="hidden"
+              onChange={handleFileChange}
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isUploading}
+              className="flex items-center gap-2 px-4 py-2 text-sm bg-vinci-blue text-white rounded hover:bg-vinci-blue/90 transition-colors disabled:opacity-50"
+            >
+              {isUploading ? (
+                <>
+                  <span className="inline-block w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  Parsing...
+                </>
+              ) : (
+                <>
+                  <Upload size={14} />
+                  Importer un CPS
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+
+        {uploadError && (
+          <div className="text-xs text-status-warn bg-red-50 border border-red-200 rounded px-3 py-2">
+            {uploadError}
+          </div>
+        )}
+
+        {isLoading ? (
+          <div className="text-sm text-text-tertiary">Chargement...</div>
+        ) : imports.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 text-text-tertiary">
+            <FileSpreadsheet size={40} className="mb-3 opacity-30" />
+            <p className="text-sm">Aucun CPS importe.</p>
+            <p className="text-xs mt-1">
+              Importez le PDF du CPS pour extraire les exigences techniques.
+            </p>
+          </div>
+        ) : (
+          <div className="flex flex-wrap gap-3">
+            {imports.map((imp) => (
+              <button
+                key={imp.id}
+                onClick={() => setSelectedImport(imp)}
+                className={cn(
+                  "flex flex-col items-start gap-1 px-4 py-3 rounded border text-left transition-colors min-w-[220px]",
+                  selectedImport?.id === imp.id
+                    ? "border-vinci-blue bg-vinci-blue/5"
+                    : "border-border-std bg-white hover:border-vinci-blue/40"
+                )}
+              >
+                <div className="flex items-center justify-between w-full gap-2">
+                  <span className="text-sm font-medium text-text-primary truncate max-w-[160px]">
+                    {imp.file_name}
+                  </span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDeleteTargetId(imp.id);
+                    }}
+                    className="text-text-tertiary hover:text-status-warn shrink-0"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+                <div className="flex items-center gap-2 text-xs text-text-secondary">
+                  <span
+                    className={cn(
+                      "px-1.5 py-0.5 rounded text-xs font-medium",
+                      imp.status === "parsed"
+                        ? "bg-green-100 text-green-800"
+                        : imp.status === "error"
+                          ? "bg-red-100 text-red-700"
+                          : "bg-yellow-100 text-yellow-700"
+                    )}
+                  >
+                    {imp.status}
+                  </span>
+                  {imp.page_count != null && <span>{imp.page_count} pages</span>}
+                  {imp.rules_count != null && <span>{imp.rules_count} regles</span>}
+                </div>
+                <div className="text-xs text-text-tertiary">{formatDateTime(imp.created_at)}</div>
+                {imp.status === "error" && imp.error_message && (
+                  <div className="text-xs text-status-warn mt-1 max-w-xs">{imp.error_message}</div>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {selectedImport?.status === "parsed" && detail && (
+          <h3 className="text-sm font-semibold text-text-primary">
+            Regles extraites — {selectedImport.file_name}
+            <span className="ml-2 text-text-tertiary font-normal">
+              ({rules.length} regles sur {selectedImport.page_count} pages)
+            </span>
+          </h3>
+        )}
+      </div>
+
+      {/* Tableau des regles — conteneur de defilement independant (sticky thead) */}
+      {selectedImport?.status === "parsed" && detail && (
+        rules.length === 0 ? (
+          <div className="shrink-0 text-sm text-text-tertiary bg-yellow-50 border border-yellow-200 rounded px-4 py-3">
+            Aucune regle technique extraite. Verifiez que le PDF contient bien des prescriptions
+            chiffrables (sections, chutes de tension, types de cables...).
+          </div>
+        ) : (
+          <div className="flex-1 min-h-0 overflow-auto border border-border-std rounded">
+            <table className="w-full text-sm">
+              <thead
+                className="sticky top-0 z-10"
+                style={{ backgroundColor: "#001E50" }}
+              >
+                <tr className="text-white text-xs">
+                  <th className="px-3 py-2.5 text-left font-medium">Type</th>
+                  <th className="px-3 py-2.5 text-left font-medium">Valeur</th>
+                  <th className="px-3 py-2.5 text-left font-medium">Description</th>
+                  <th className="px-3 py-2.5 text-center font-medium">Page</th>
+                  <th className="px-3 py-2.5 text-center font-medium">Confiance</th>
+                  <th className="px-3 py-2.5 text-center font-medium">Source</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border-std">
+                {Object.entries(grouped).map(([ruleType, typeRules]) => (
+                  <>
+                    <tr key={`group-${ruleType}`} className="bg-gray-50">
+                      <td
+                        colSpan={6}
+                        className="px-3 py-1.5 text-xs font-semibold text-text-secondary uppercase tracking-wide"
+                      >
+                        {ruleTypeLabel(ruleType)}
+                        <span className="ml-2 font-normal text-text-tertiary">
+                          ({typeRules.length})
+                        </span>
+                      </td>
+                    </tr>
+                    {typeRules.map((rule, i) => (
+                      <CpsRuleRow
+                        key={`${ruleType}-${i}`}
+                        rule={rule}
+                        onShowExcerpt={setExcerptRule}
+                      />
+                    ))}
+                  </>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
+      )}
+
+      {excerptRule && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded shadow-lg max-w-lg w-full p-5 space-y-3">
+            <div className="flex items-center justify-between">
+              <h4 className="font-semibold text-sm text-text-primary">
+                Extrait source — page {excerptRule.source_page}
+              </h4>
+              <button
+                onClick={() => setExcerptRule(null)}
+                className="text-text-tertiary hover:text-text-primary"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="text-xs font-medium text-vinci-blue">{excerptRule.description}</div>
+            <blockquote className="text-xs text-text-secondary bg-gray-50 border-l-4 border-vinci-blue/30 px-3 py-2 rounded-r leading-relaxed">
+              {excerptRule.source_excerpt}
+            </blockquote>
+            <div className="flex items-center gap-3 text-xs text-text-tertiary">
+              <span>Confiance : {Math.round(excerptRule.confidence * 100)}%</span>
+              {excerptRule.requires_validation && (
+                <span className="text-yellow-700 bg-yellow-50 border border-yellow-200 rounded px-2 py-0.5">
+                  A valider manuellement
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleteTargetId && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded shadow-lg max-w-sm w-full p-5 space-y-4">
+            <h4 className="font-semibold text-sm text-text-primary">Supprimer cet import CPS ?</h4>
+            <p className="text-xs text-text-secondary">
+              Toutes les regles extraites seront supprimees. Cette action est irreversible.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setDeleteTargetId(null)}
+                className="px-4 py-2 text-sm text-text-secondary border border-border-std rounded hover:bg-bg-cell"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={() => doDelete(deleteTargetId)}
+                className="px-4 py-2 text-sm bg-red-600 text-white rounded hover:bg-red-700"
+              >
+                Supprimer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -106,10 +106,16 @@ export interface CanecoExportDetail {
   total_pages: number;
 }
 
+export interface BordereauSheetPreview {
+  sheets: string[];
+  detected: string | null;
+}
+
 export interface BordereauImport {
   id: string;
   project_id: string;
   file_name: string;
+  sheet_name: string | null;
   indice: string | null;
   status: "uploaded" | "parsing" | "parsed" | "error";
   total_lines: number | null;
@@ -154,4 +160,34 @@ export interface BordereauDetail {
   page: number;
   per_page: number;
   total_pages: number;
+}
+
+export interface CpsImport {
+  id: string;
+  project_id: string;
+  file_name: string;
+  status: "uploaded" | "parsing" | "parsed" | "error";
+  extraction_method: string;
+  page_count: number | null;
+  rules_count: number | null;
+  error_message: string | null;
+  created_at: string;
+  created_by_id: string | null;
+}
+
+export interface CpsRule {
+  rule_type: string;
+  value: string;
+  unit: string | null;
+  context_label: string | null;
+  description: string;
+  source_page: number;
+  source_excerpt: string | null;
+  confidence: number;
+  requires_validation: boolean;
+}
+
+export interface CpsImportDetail {
+  imp: CpsImport;
+  rules: CpsRule[];
 }
