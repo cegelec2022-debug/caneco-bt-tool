@@ -2254,26 +2254,51 @@ function BdpUploadForm({
 // ---------------------------------------------------------------------------
 
 const RULE_TYPE_LABELS: Record<string, string> = {
-  section_minimale: "Section minimale",
-  section_pe: "Section PE/PEN",
-  chute_tension_max: "Chute de tension",
-  type_cable_requis: "Type de cable",
-  cable_resistance_feu: "Cable resistant au feu",
-  ddr_sensibilite: "DDR - Sensibilite",
-  ddr_type: "DDR - Type",
-  disjoncteur_kind: "Disjoncteur",
-  schema_mise_terre: "Schema mise a la terre",
-  alimentation_secourue: "Alimentation secouree",
-  protection_surtension: "Protection surtension",
-  marque_imposee: "Marque preconisee",
-  securite_incendie: "Securite incendie",
-  indice_protection: "Indice de protection",
-  indice_choc: "Indice de choc",
-  resistance_isolement: "Resistance d'isolement",
-  classe_isolation: "Classe d'isolation",
+  // Sections conducteurs (comparaison directe colonne CANECO)
+  section_minimale:        "Section minimale conducteurs",
+  section_pe:              "Section PE / PEN",
+  section_neutre:          "Section neutre",
+  // Chute de tension (comparaison CANECO DeltaU)
+  chute_tension_max:       "Chute de tension max.",
+  // Cables (comparaison CANECO TypeCable)
+  type_cable_requis:       "Type de cable requis",
+  cable_resistance_feu:    "Cable resistant au feu",
+  cable_blinde:            "Cable blinde",
+  tension_isolement:       "Tension d'isolement cable",
+  // Protection (comparaison CANECO Courbe / Calibre / Pdc)
+  ddr_sensibilite:         "DDR - Sensibilite",
+  ddr_type:                "DDR - Type",
+  disjoncteur_kind:        "Type disjoncteur",
+  courbe_disjoncteur:      "Courbe declenchement",
+  pouvoir_coupure:         "Pouvoir de coupure (Icu)",
+  calibre_protection:      "Calibre protection",
+  // Reseau (comparaison CANECO tension / frequence)
+  tension_nominale:        "Tension nominale reseau",
+  frequence_reseau:        "Frequence reseau",
+  courant_court_circuit:   "Courant de court-circuit Icc",
+  schema_mise_terre:       "Schema liaison a la terre",
+  selectivite:             "Selectivite",
+  // Mise a la terre / equipotentialite
+  prise_terre:             "Prise de terre (resistance)",
+  liaison_equipotentielle: "Liaison equipotentielle",
+  // Mode de pose (comparaison CANECO ModePose)
+  mode_pose_cable:         "Mode de pose cables",
+  canalisation_enterree:   "Canalisations enterrees",
+  marquage_cable:          "Marquage / etiquetage cables",
+  // Securite / incendie
+  securite_incendie:       "Securite incendie / desenfumage",
+  // Alimentation secourue
+  alimentation_secourue:   "Alimentation secouree (ASI/UPS)",
+  autonomie_secours:       "Autonomie alimentation secours",
+  // Materiels
+  protection_surtension:   "Protection surtension",
+  indice_protection:       "Indice de protection IP",
+  indice_choc:             "Indice de choc IK",
+  resistance_isolement:    "Resistance d'isolement",
+  classe_isolation:        "Classe d'isolation",
+  marque_imposee:          "Marque preconisee",
+  // Environnement
   condition_environnementale: "Conditions environnementales",
-  canalisation_enterree: "Canalisations enterrees",
-  selectivite: "Selectivite",
 };
 
 function ruleTypeLabel(rt: string): string {
@@ -2388,9 +2413,8 @@ function CpsTab({ projectId }: { projectId: string }) {
   }, {});
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col p-6 gap-5">
-      {/* Zone fixe : banniere + controles + cartes d'import */}
-      <div className="shrink-0 space-y-4">
+    <div className="flex-1 min-h-0 overflow-auto p-6 space-y-5">
+      <div>
         <div className="text-xs text-text-secondary bg-blue-50 border border-blue-200 rounded px-4 py-2.5">
           Extraction deterministe V1 — les regles marquees "a valider" necessitent une verification
           manuelle par le BE. La version V2 utilisera un LLM pour ameliorer la precision.
@@ -2506,15 +2530,14 @@ function CpsTab({ projectId }: { projectId: string }) {
         )}
       </div>
 
-      {/* Tableau des regles — conteneur de defilement independant (sticky thead) */}
       {selectedImport?.status === "parsed" && detail && (
         rules.length === 0 ? (
-          <div className="shrink-0 text-sm text-text-tertiary bg-yellow-50 border border-yellow-200 rounded px-4 py-3">
+          <div className="text-sm text-text-tertiary bg-yellow-50 border border-yellow-200 rounded px-4 py-3">
             Aucune regle technique extraite. Verifiez que le PDF contient bien des prescriptions
             chiffrables (sections, chutes de tension, types de cables...).
           </div>
         ) : (
-          <div className="flex-1 min-h-0 overflow-auto border border-border-std rounded">
+          <div className="border border-border-std rounded">
             <table className="w-full text-sm">
               <thead
                 className="sticky top-0 z-10"

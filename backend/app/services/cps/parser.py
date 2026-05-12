@@ -6,7 +6,7 @@ quel projet (DACHSER, NSK, ou autre) sans configuration specifique.
 
 Chaque definition de pattern peut contenir :
   rule_type       : categorie semantique (pour le moteur de verification)
-  context_label   : sous-contexte optionnel (eclairage, prises, debrochable...)
+  context_label   : sous-contexte optionnel (eclairage, prises, moteur...)
   pattern         : re.Pattern
   value_group     : index de groupe capturant la valeur (0 = match entier)
   fixed_value     : si defini, utilise cette valeur fixe au lieu du groupe extrait
@@ -32,7 +32,159 @@ from loguru import logger
 _RULE_PATTERNS: list[dict[str, Any]] = [
 
     # =========================================================================
-    # SECTIONS MINIMALES
+    # TENSION NOMINALE RESEAU
+    # (comparaison CANECO colonne Un)
+    # =========================================================================
+    {
+        "rule_type": "tension_nominale",
+        "context_label": None,
+        "pattern": re.compile(
+            r"tension[s]?\s+(?:nominale?s?|d'alimentation|r[eé]seau)[^\n.]{0,80}?"
+            r"(\d{2,3})\s*[Vv]\b",
+            re.IGNORECASE,
+        ),
+        "value_group": 1,
+        "strip_spaces": False,
+        "unit": "V",
+        "confidence": 0.9,
+        "desc_template": "Tension nominale du reseau : {value} V",
+    },
+    {
+        "rule_type": "tension_nominale",
+        "context_label": "distribution",
+        "pattern": re.compile(
+            r"(\d{2,3})\s*[Vv]\s*/\s*(\d{3})\s*[Vv]\b",
+            re.IGNORECASE,
+        ),
+        "value_group": 2,
+        "strip_spaces": False,
+        "unit": "V",
+        "confidence": 0.85,
+        "desc_template": "Tension de distribution : {value} V",
+    },
+    {
+        "rule_type": "tension_nominale",
+        "context_label": "triphasee",
+        "pattern": re.compile(
+            r"\b(400|690)\s*[Vv]\b[^\n.]{0,60}?"
+            r"(?:triphas[eé]|trois\s+phases?|3\s*[Pp]h|HTA|BTA)",
+            re.IGNORECASE,
+        ),
+        "value_group": 1,
+        "strip_spaces": False,
+        "unit": "V",
+        "confidence": 0.9,
+        "desc_template": "Tension nominale triphasee : {value} V",
+    },
+
+    # =========================================================================
+    # FREQUENCE RESEAU
+    # =========================================================================
+    {
+        "rule_type": "frequence_reseau",
+        "context_label": None,
+        "pattern": re.compile(
+            r"fr[eé]quence[^\n.]{0,50}?(\d{2})\s*[Hh]z",
+            re.IGNORECASE,
+        ),
+        "value_group": 1,
+        "strip_spaces": False,
+        "unit": "Hz",
+        "confidence": 0.9,
+        "desc_template": "Frequence du reseau : {value} Hz",
+    },
+    {
+        "rule_type": "frequence_reseau",
+        "context_label": None,
+        "pattern": re.compile(
+            r"(\d{2})\s*[Hh]z[^\n.]{0,30}?(?:fr[eé]quence|r[eé]seau|secteur|EDF)",
+            re.IGNORECASE,
+        ),
+        "value_group": 1,
+        "strip_spaces": False,
+        "unit": "Hz",
+        "confidence": 0.85,
+        "desc_template": "Frequence du reseau : {value} Hz",
+    },
+
+    # =========================================================================
+    # COURANT DE COURT-CIRCUIT ICC
+    # (comparaison CANECO colonne Icc)
+    # =========================================================================
+    {
+        "rule_type": "courant_court_circuit",
+        "context_label": None,
+        "pattern": re.compile(
+            r"\bIcc\s*[=:≥>]\s*(\d+(?:[.,]\d+)?)\s*kA",
+            re.IGNORECASE,
+        ),
+        "value_group": 1,
+        "strip_spaces": False,
+        "unit": "kA",
+        "confidence": 0.95,
+        "desc_template": "Courant de court-circuit Icc : {value} kA",
+    },
+    {
+        "rule_type": "courant_court_circuit",
+        "context_label": None,
+        "pattern": re.compile(
+            r"courant\s+de\s+court[- ]circuit[^\n.]{0,80}?(\d+(?:[.,]\d+)?)\s*kA",
+            re.IGNORECASE,
+        ),
+        "value_group": 1,
+        "strip_spaces": False,
+        "unit": "kA",
+        "confidence": 0.9,
+        "desc_template": "Courant de court-circuit : {value} kA",
+    },
+    {
+        "rule_type": "courant_court_circuit",
+        "context_label": None,
+        "pattern": re.compile(
+            r"(\d+(?:[.,]\d+)?)\s*kA[^\n.]{0,50}?(?:Icc|court[- ]circuit|coupure)",
+            re.IGNORECASE,
+        ),
+        "value_group": 1,
+        "strip_spaces": False,
+        "unit": "kA",
+        "confidence": 0.8,
+        "desc_template": "Courant de court-circuit : {value} kA",
+    },
+
+    # =========================================================================
+    # POUVOIR DE COUPURE (Icu / Ics)
+    # (comparaison CANECO colonne Pdc)
+    # =========================================================================
+    {
+        "rule_type": "pouvoir_coupure",
+        "context_label": None,
+        "pattern": re.compile(
+            r"\b(?:Icu|Ics|pouvoir\s+de\s+coupure\s+ultime)\s*[=:≥>]\s*(\d+(?:[.,]\d+)?)\s*kA",
+            re.IGNORECASE,
+        ),
+        "value_group": 1,
+        "strip_spaces": False,
+        "unit": "kA",
+        "confidence": 0.95,
+        "desc_template": "Pouvoir de coupure Icu >= {value} kA",
+    },
+    {
+        "rule_type": "pouvoir_coupure",
+        "context_label": None,
+        "pattern": re.compile(
+            r"pouvoir\s+de\s+coupure[^\n.]{0,80}?(\d+(?:[.,]\d+)?)\s*kA",
+            re.IGNORECASE,
+        ),
+        "value_group": 1,
+        "strip_spaces": False,
+        "unit": "kA",
+        "confidence": 0.9,
+        "desc_template": "Pouvoir de coupure : {value} kA",
+    },
+
+    # =========================================================================
+    # SECTIONS MINIMALES CONDUCTEURS
+    # (comparaison directe colonne CANECO Section)
     # =========================================================================
     {
         "rule_type": "section_minimale",
@@ -88,6 +240,37 @@ _RULE_PATTERNS: list[dict[str, Any]] = [
     },
 
     # =========================================================================
+    # CONDUCTEUR NEUTRE
+    # =========================================================================
+    {
+        "rule_type": "section_neutre",
+        "context_label": None,
+        "pattern": re.compile(
+            r"(?:conducteur\s+)?neutre[^\n.]{0,80}?(\d+[,.]?\d*)\s*mm[²2]",
+            re.IGNORECASE,
+        ),
+        "value_group": 1,
+        "strip_spaces": False,
+        "unit": "mm²",
+        "confidence": 0.85,
+        "desc_template": "Section neutre : {value} mm²",
+    },
+    {
+        "rule_type": "section_neutre",
+        "context_label": "reduit",
+        "pattern": re.compile(
+            r"(?:neutre\s+r[eé]duit|section\s+r[eé]duite\s+(?:du\s+)?neutre|50\s*%[^\n.]{0,40}?neutre)",
+            re.IGNORECASE,
+        ),
+        "value_group": 0,
+        "fixed_value": "Reduit (50%)",
+        "strip_spaces": False,
+        "unit": None,
+        "confidence": 0.85,
+        "desc_template": "Neutre a section reduite (50 % de la phase) admis",
+    },
+
+    # =========================================================================
     # CONDUCTEUR DE PROTECTION PE
     # =========================================================================
     {
@@ -106,6 +289,7 @@ _RULE_PATTERNS: list[dict[str, Any]] = [
 
     # =========================================================================
     # CHUTE DE TENSION
+    # (comparaison CANECO DeltaU)
     # =========================================================================
     {
         "rule_type": "chute_tension_max",
@@ -133,9 +317,23 @@ _RULE_PATTERNS: list[dict[str, Any]] = [
         "confidence": 0.8,
         "desc_template": "Chute de tension eclairage : {value} %",
     },
+    {
+        "rule_type": "chute_tension_max",
+        "context_label": "force",
+        "pattern": re.compile(
+            r"d[eé]parts?\s+(?:moteur|force)[^\n.]{0,60}?(\d+[,.]?\d*)\s*%[^\n.]{0,40}?(?:chute|tension)",
+            re.IGNORECASE,
+        ),
+        "value_group": 1,
+        "strip_spaces": False,
+        "unit": "%",
+        "confidence": 0.8,
+        "desc_template": "Chute de tension depart force/moteur : {value} %",
+    },
 
     # =========================================================================
-    # TYPES DE CABLES (valeur = type normalise, espaces supprimes)
+    # TYPES DE CABLES
+    # (comparaison CANECO TypeCable)
     # =========================================================================
     {
         "rule_type": "type_cable_requis",
@@ -154,7 +352,20 @@ _RULE_PATTERNS: list[dict[str, Any]] = [
         "rule_type": "type_cable_requis",
         "context_label": None,
         "pattern": re.compile(
-            r"\b(CR1|FR-N1X1|H07[VRU][RN]?-?[FKR]?|LSOH|LSZH|HF)\b",
+            r"\b(RO2V|R02V)\b",
+            re.IGNORECASE,
+        ),
+        "value_group": 1,
+        "strip_spaces": True,
+        "unit": None,
+        "confidence": 0.9,
+        "desc_template": "Type de cable requis : {value}",
+    },
+    {
+        "rule_type": "type_cable_requis",
+        "context_label": None,
+        "pattern": re.compile(
+            r"\b(CR1|FR-N1X1|H07[VRU][RN]?-?[FKR]?|H05[VRU][VR]-?[F]?)\b",
             re.IGNORECASE,
         ),
         "value_group": 1,
@@ -167,7 +378,7 @@ _RULE_PATTERNS: list[dict[str, Any]] = [
         "rule_type": "type_cable_requis",
         "context_label": "lsoh",
         "pattern": re.compile(
-            r"(?:faible\s+[eé]mission\s+de\s+fum[eé]e|sans\s+halog[eè]ne)",
+            r"(?:faible\s+[eé]mission\s+de\s+fum[eé]e|sans\s+halog[eè]ne|LSOH|LSZH|HF[^\w])",
             re.IGNORECASE,
         ),
         "value_group": 0,
@@ -175,13 +386,42 @@ _RULE_PATTERNS: list[dict[str, Any]] = [
         "strip_spaces": False,
         "unit": None,
         "confidence": 0.8,
-        "desc_template": "Cable a faible emission de fumee (LSOH/HF) requis",
+        "desc_template": "Cable a faible emission de fumee sans halogene (LSOH/HF) requis",
+    },
+
+    # =========================================================================
+    # TENSION D'ISOLEMENT DU CABLE (600/1000V, 450/750V...)
+    # =========================================================================
+    {
+        "rule_type": "tension_isolement",
+        "context_label": None,
+        "pattern": re.compile(
+            r"\b(\d{3,4})\s*[Vv]\s*/\s*(\d{3,4})\s*[Vv]\b[^\n.]{0,50}?"
+            r"(?:c[aâ]ble|conducteur|isolement|tension)",
+            re.IGNORECASE,
+        ),
+        "value_group": 2,
+        "strip_spaces": False,
+        "unit": "V",
+        "confidence": 0.85,
+        "desc_template": "Tension d'isolement cable : {value} V",
+    },
+    {
+        "rule_type": "tension_isolement",
+        "context_label": None,
+        "pattern": re.compile(
+            r"tensions?\s+d'isolement[^\n.]{0,80}?(\d{3,4})\s*[Vv]",
+            re.IGNORECASE,
+        ),
+        "value_group": 1,
+        "strip_spaces": False,
+        "unit": "V",
+        "confidence": 0.85,
+        "desc_template": "Tension d'isolement minimale : {value} V",
     },
 
     # =========================================================================
     # CABLES RESISTANTS AU FEU
-    # Probleme precedent : on capturait la phrase entiere → valeur illisible.
-    # Correction : deux patterns specifiques avec fixed_value ou capture cible.
     # =========================================================================
     {
         "rule_type": "cable_resistance_feu",
@@ -228,11 +468,26 @@ _RULE_PATTERNS: list[dict[str, Any]] = [
     },
 
     # =========================================================================
+    # CABLE BLINDE
+    # =========================================================================
+    {
+        "rule_type": "cable_blinde",
+        "context_label": None,
+        "pattern": re.compile(
+            r"c[aâ]bles?\s+blind[eé]s?|liaison\s+blind[eé]e?",
+            re.IGNORECASE,
+        ),
+        "value_group": 0,
+        "fixed_value": "Requis",
+        "strip_spaces": False,
+        "unit": None,
+        "confidence": 0.85,
+        "desc_template": "Cable blinde requis (perturbations electromagnetiques)",
+    },
+
+    # =========================================================================
     # DDR (dispositifs differentiels residuels)
-    # Trois formulations courantes dans les CPS francais :
-    #   "DDR ... 30 mA"
-    #   "differentiel(les) ... sensibilite ... 30 mA"
-    #   "30 mA de sensibilite"
+    # (comparaison CANECO colonne DDR_sensib)
     # =========================================================================
     {
         "rule_type": "ddr_sensibilite",
@@ -277,7 +532,8 @@ _RULE_PATTERNS: list[dict[str, Any]] = [
         "rule_type": "ddr_type",
         "context_label": None,
         "pattern": re.compile(
-            r"(?:DDR|diff[eé]rentiel)[^\n.]{0,40}?type\s+([AaCcBb]{1,2})\b",
+            r"(?:DDR|diff[eé]rentiel|interrupteur\s+diff[eé]rentiel)[^\n.]{0,50}?"
+            r"type\s+([A-Fa-f]{1,2})\b",
             re.IGNORECASE,
         ),
         "value_group": 1,
@@ -285,6 +541,110 @@ _RULE_PATTERNS: list[dict[str, Any]] = [
         "unit": None,
         "confidence": 0.85,
         "desc_template": "DDR de type {value}",
+    },
+
+    # =========================================================================
+    # COURBE DE DECLENCHEMENT DISJONCTEUR
+    # (comparaison CANECO colonne Courbe)
+    # =========================================================================
+    {
+        "rule_type": "courbe_disjoncteur",
+        "context_label": None,
+        "pattern": re.compile(
+            r"courbe\s+(?:de\s+(?:d[eé]clenchement|r[eé]ponse|d[eé]clench))[^\n.]{0,60}?"
+            r"\b([BCDGMA]{1,2})\b",
+            re.IGNORECASE,
+        ),
+        "value_group": 1,
+        "strip_spaces": True,
+        "unit": None,
+        "confidence": 0.9,
+        "desc_template": "Courbe de declenchement disjoncteur : {value}",
+    },
+    {
+        "rule_type": "courbe_disjoncteur",
+        "context_label": None,
+        "pattern": re.compile(
+            r"disjoncteurs?[^\n.]{0,60}?courbe\s+([BCDGMA]{1,2})\b",
+            re.IGNORECASE,
+        ),
+        "value_group": 1,
+        "strip_spaces": True,
+        "unit": None,
+        "confidence": 0.9,
+        "desc_template": "Courbe de declenchement disjoncteur : {value}",
+    },
+    {
+        "rule_type": "courbe_disjoncteur",
+        "context_label": None,
+        "pattern": re.compile(
+            r"\bcourbes?\s+([BCDGMA]{1,2})\b[^\n.]{0,50}?disjoncteur",
+            re.IGNORECASE,
+        ),
+        "value_group": 1,
+        "strip_spaces": True,
+        "unit": None,
+        "confidence": 0.85,
+        "desc_template": "Courbe de declenchement disjoncteur : {value}",
+    },
+    {
+        "rule_type": "courbe_disjoncteur",
+        "context_label": "moteur",
+        "pattern": re.compile(
+            r"(?:d[eé]part\s+)?moteur[^\n.]{0,60}?"
+            r"(?:courbe\s+)?(?:MA|AM)\b",
+            re.IGNORECASE,
+        ),
+        "value_group": 0,
+        "fixed_value": "MA",
+        "strip_spaces": False,
+        "unit": None,
+        "confidence": 0.85,
+        "desc_template": "Courbe MA (magnetique pur) pour departs moteur",
+    },
+
+    # =========================================================================
+    # CALIBRE PROTECTION
+    # (comparaison CANECO colonne Calibre)
+    # =========================================================================
+    {
+        "rule_type": "calibre_protection",
+        "context_label": "minimum",
+        "pattern": re.compile(
+            r"calibre\s+(?:minimum|min(?:imum)?)[^\n.]{0,60}?(\d+(?:[.,]\d+)?)\s*[Aa]\b",
+            re.IGNORECASE,
+        ),
+        "value_group": 1,
+        "strip_spaces": False,
+        "unit": "A",
+        "confidence": 0.85,
+        "desc_template": "Calibre minimum protection : {value} A",
+    },
+    {
+        "rule_type": "calibre_protection",
+        "context_label": "maximum",
+        "pattern": re.compile(
+            r"calibre\s+(?:maximum|max(?:imum)?)[^\n.]{0,60}?(\d+(?:[.,]\d+)?)\s*[Aa]\b",
+            re.IGNORECASE,
+        ),
+        "value_group": 1,
+        "strip_spaces": False,
+        "unit": "A",
+        "confidence": 0.85,
+        "desc_template": "Calibre maximum protection : {value} A",
+    },
+    {
+        "rule_type": "calibre_protection",
+        "context_label": "interrupteur_general",
+        "pattern": re.compile(
+            r"(?:interrupteur|disjoncteur)\s+g[eé]n[eé]ral[^\n.]{0,80}?(\d+(?:[.,]\d+)?)\s*[Aa]\b",
+            re.IGNORECASE,
+        ),
+        "value_group": 1,
+        "strip_spaces": False,
+        "unit": "A",
+        "confidence": 0.85,
+        "desc_template": "Calibre interrupteur/disjoncteur general : {value} A",
     },
 
     # =========================================================================
@@ -318,9 +678,43 @@ _RULE_PATTERNS: list[dict[str, Any]] = [
         "confidence": 0.85,
         "desc_template": "Disjoncteur purement magnetique requis",
     },
+    {
+        "rule_type": "disjoncteur_kind",
+        "context_label": "moteur",
+        "pattern": re.compile(
+            r"disjoncteurs?\s+(?:de\s+)?(?:protection\s+)?moteurs?",
+            re.IGNORECASE,
+        ),
+        "value_group": 0,
+        "fixed_value": "Disjoncteur-moteur",
+        "strip_spaces": False,
+        "unit": None,
+        "confidence": 0.85,
+        "desc_template": "Disjoncteur moteur requis pour departs moteur",
+    },
 
     # =========================================================================
-    # SCHEMA DE MISE A LA TERRE
+    # SELECTIVITE
+    # (comparaison CANECO schema selectivite)
+    # =========================================================================
+    {
+        "rule_type": "selectivite",
+        "context_label": None,
+        "pattern": re.compile(
+            r"s[eé]lectivit[eé][^\n.]{0,80}?"
+            r"(totale|partielle|chronom[eé]trique|amp[eè]rem[eé]trique|verticale|horizontale)",
+            re.IGNORECASE,
+        ),
+        "value_group": 1,
+        "strip_spaces": True,
+        "unit": None,
+        "confidence": 0.85,
+        "desc_template": "Selectivite {value} requise",
+    },
+
+    # =========================================================================
+    # SCHEMA DE LIAISON A LA TERRE
+    # (comparaison CANECO schema TN-S/TT/IT)
     # =========================================================================
     {
         "rule_type": "schema_mise_terre",
@@ -337,6 +731,182 @@ _RULE_PATTERNS: list[dict[str, Any]] = [
     },
 
     # =========================================================================
+    # PRISE DE TERRE (resistance)
+    # =========================================================================
+    {
+        "rule_type": "prise_terre",
+        "context_label": None,
+        "pattern": re.compile(
+            r"r[eé]sistance\s+(?:de\s+(?:la\s+)?)?(?:prise\s+de\s+terre|terre|boucle)[^\n.]{0,60}?"
+            r"(?:[<=≤<]{1,2})\s*(\d+(?:[.,]\d+)?)\s*[Ωo]",
+            re.IGNORECASE,
+        ),
+        "value_group": 1,
+        "strip_spaces": False,
+        "unit": "Ω",
+        "confidence": 0.9,
+        "desc_template": "Resistance de la prise de terre <= {value} Ohm",
+    },
+    {
+        "rule_type": "prise_terre",
+        "context_label": None,
+        "pattern": re.compile(
+            r"(?:prise\s+de\s+terre|piquet\s+(?:de\s+)?terre)[^\n.]{0,80}?"
+            r"(\d+(?:[.,]\d+)?)\s*[Ωo]",
+            re.IGNORECASE,
+        ),
+        "value_group": 1,
+        "strip_spaces": False,
+        "unit": "Ω",
+        "confidence": 0.85,
+        "desc_template": "Resistance prise de terre : {value} Ohm",
+    },
+
+    # =========================================================================
+    # LIAISONS EQUIPOTENTIELLES
+    # =========================================================================
+    {
+        "rule_type": "liaison_equipotentielle",
+        "context_label": None,
+        "pattern": re.compile(
+            r"liaisons?\s+[eé]quipotentielle?s?",
+            re.IGNORECASE,
+        ),
+        "value_group": 0,
+        "fixed_value": "Requise",
+        "strip_spaces": False,
+        "unit": None,
+        "confidence": 0.85,
+        "desc_template": "Liaison equipotentielle requise",
+    },
+
+    # =========================================================================
+    # MODE DE POSE DES CABLES
+    # (comparaison CANECO colonne ModePose)
+    # =========================================================================
+    {
+        "rule_type": "mode_pose_cable",
+        "context_label": "chemin_cables",
+        "pattern": re.compile(
+            r"chemin(?:s?)\s+de\s+c[aâ]bles?",
+            re.IGNORECASE,
+        ),
+        "value_group": 0,
+        "fixed_value": "Chemin de cables",
+        "strip_spaces": False,
+        "unit": None,
+        "confidence": 0.85,
+        "desc_template": "Pose sur chemin de cables",
+    },
+    {
+        "rule_type": "mode_pose_cable",
+        "context_label": "conduit",
+        "pattern": re.compile(
+            r"(?:sous|en)\s+(?:conduits?|tubes?|fourreaux?)"
+            r"[^\n.]{0,40}?(?:PVC|PEHD|ICT|IRL|IRO|ICA|M25|M32|M40)?",
+            re.IGNORECASE,
+        ),
+        "value_group": 0,
+        "fixed_value": "Sous conduit",
+        "strip_spaces": False,
+        "unit": None,
+        "confidence": 0.85,
+        "desc_template": "Pose sous conduit/tube protecteur",
+    },
+    {
+        "rule_type": "mode_pose_cable",
+        "context_label": "apparent",
+        "pattern": re.compile(
+            r"pose\s+(?:en\s+)?apparent[e]?[^\n.]{0,40}?c[aâ]bles?",
+            re.IGNORECASE,
+        ),
+        "value_group": 0,
+        "fixed_value": "Apparent",
+        "strip_spaces": False,
+        "unit": None,
+        "confidence": 0.8,
+        "desc_template": "Pose apparente des cables",
+    },
+    {
+        "rule_type": "mode_pose_cable",
+        "context_label": "prefabrique",
+        "pattern": re.compile(
+            r"canalisations?\s+pr[eé]fabriqu[eé]es?",
+            re.IGNORECASE,
+        ),
+        "value_group": 0,
+        "fixed_value": "Canalisation prefabriquee",
+        "strip_spaces": False,
+        "unit": None,
+        "confidence": 0.85,
+        "desc_template": "Canalisation electrique prefabriquee",
+    },
+
+    # =========================================================================
+    # CANALISATIONS ENTERREES
+    # =========================================================================
+    {
+        "rule_type": "canalisation_enterree",
+        "context_label": "profondeur",
+        "pattern": re.compile(
+            r"(?:profondeur\s+(?:de\s+)?pose|pose\s+[eé]nterr[eé]e?)[^\n.]{0,60}?(\d+)\s*(?:cm|m\b)",
+            re.IGNORECASE,
+        ),
+        "value_group": 1,
+        "strip_spaces": False,
+        "unit": "cm",
+        "confidence": 0.8,
+        "desc_template": "Profondeur de pose enterree : {value} cm",
+    },
+    {
+        "rule_type": "canalisation_enterree",
+        "context_label": "grillage",
+        "pattern": re.compile(
+            r"grillage\s+avertisseur",
+            re.IGNORECASE,
+        ),
+        "value_group": 0,
+        "fixed_value": "Requis",
+        "strip_spaces": False,
+        "unit": None,
+        "confidence": 0.85,
+        "desc_template": "Grillage avertisseur pour canalisations enterrees requis",
+    },
+
+    # =========================================================================
+    # MARQUAGE / ETIQUETAGE DES CABLES
+    # =========================================================================
+    {
+        "rule_type": "marquage_cable",
+        "context_label": None,
+        "pattern": re.compile(
+            r"(?:rep[eé]rage|[eé]tiquetage)[^\n.]{0,80}?"
+            r"(?:c[aâ]bles?|circuits?|d[eé]parts?|conducteurs?)",
+            re.IGNORECASE,
+        ),
+        "value_group": 0,
+        "fixed_value": "Requis",
+        "strip_spaces": False,
+        "unit": None,
+        "confidence": 0.8,
+        "desc_template": "Reperage/etiquetage des cables et circuits requis",
+    },
+    {
+        "rule_type": "marquage_cable",
+        "context_label": "gravure",
+        "pattern": re.compile(
+            r"(?:[eé]tiquettes?\s+(?:de\s+)?(?:rep[eé]rage|identification)|grav[eé]|gravure)",
+            re.IGNORECASE,
+        ),
+        "value_group": 0,
+        "fixed_value": "Etiquette gravee",
+        "strip_spaces": False,
+        "unit": None,
+        "confidence": 0.8,
+        "desc_template": "Etiquettes de reperage gravees exigees",
+    },
+
+    # =========================================================================
     # ALIMENTATION SECOURUE (ASI / UPS / AGAM)
     # =========================================================================
     {
@@ -350,7 +920,7 @@ _RULE_PATTERNS: list[dict[str, Any]] = [
         "strip_spaces": True,
         "unit": None,
         "confidence": 0.85,
-        "desc_template": "Alimentation secourue : {value}",
+        "desc_template": "Alimentation secouree : {value}",
     },
     {
         "rule_type": "alimentation_secourue",
@@ -365,6 +935,49 @@ _RULE_PATTERNS: list[dict[str, Any]] = [
         "unit": None,
         "confidence": 0.8,
         "desc_template": "Alimentation secouree requise (voir extrait)",
+    },
+
+    # =========================================================================
+    # AUTONOMIE ALIMENTATION SECOURS
+    # =========================================================================
+    {
+        "rule_type": "autonomie_secours",
+        "context_label": None,
+        "pattern": re.compile(
+            r"autonomie[^\n.]{0,80}?(\d+(?:[.,]\d+)?)\s*(?:heure?s?|h\b)",
+            re.IGNORECASE,
+        ),
+        "value_group": 1,
+        "strip_spaces": False,
+        "unit": "h",
+        "confidence": 0.85,
+        "desc_template": "Autonomie alimentation secours : {value} h",
+    },
+    {
+        "rule_type": "autonomie_secours",
+        "context_label": None,
+        "pattern": re.compile(
+            r"autonomie[^\n.]{0,80}?(\d+)\s*(?:minutes?|min\b)",
+            re.IGNORECASE,
+        ),
+        "value_group": 1,
+        "strip_spaces": False,
+        "unit": "min",
+        "confidence": 0.85,
+        "desc_template": "Autonomie alimentation secours : {value} min",
+    },
+    {
+        "rule_type": "autonomie_secours",
+        "context_label": None,
+        "pattern": re.compile(
+            r"(\d+(?:[.,]\d+)?)\s*(?:heure?s?|h\b)\s+d'autonomie",
+            re.IGNORECASE,
+        ),
+        "value_group": 1,
+        "strip_spaces": False,
+        "unit": "h",
+        "confidence": 0.85,
+        "desc_template": "Autonomie alimentation secours : {value} h",
     },
 
     # =========================================================================
@@ -401,6 +1014,7 @@ _RULE_PATTERNS: list[dict[str, Any]] = [
 
     # =========================================================================
     # INDICES DE PROTECTION IP / IK
+    # (comparaison CANECO colonnes IP, IK)
     # =========================================================================
     {
         "rule_type": "indice_protection",
@@ -527,7 +1141,7 @@ _RULE_PATTERNS: list[dict[str, Any]] = [
         "rule_type": "condition_environnementale",
         "context_label": "temperature",
         "pattern": re.compile(
-            r"temp[eé]rature[^\n.]{0,60}?(-?\d+)\s*°?\s*C\b",
+            r"temp[eé]rature[^\n.]{0,80}?(-?\d+)\s*°?\s*C\b",
             re.IGNORECASE,
         ),
         "value_group": 1,
@@ -564,56 +1178,7 @@ _RULE_PATTERNS: list[dict[str, Any]] = [
     },
 
     # =========================================================================
-    # CANALISATIONS ENTERREES
-    # =========================================================================
-    {
-        "rule_type": "canalisation_enterree",
-        "context_label": "profondeur",
-        "pattern": re.compile(
-            r"(?:profondeur\s+(?:de\s+)?pose|pose\s+[eé]nterr[eé]e?)[^\n.]{0,60}?(\d+)\s*(?:cm|m\b)",
-            re.IGNORECASE,
-        ),
-        "value_group": 1,
-        "strip_spaces": False,
-        "unit": "cm",
-        "confidence": 0.8,
-        "desc_template": "Profondeur de pose enterree : {value} cm",
-    },
-    {
-        "rule_type": "canalisation_enterree",
-        "context_label": "grillage",
-        "pattern": re.compile(
-            r"grillage\s+avertisseur",
-            re.IGNORECASE,
-        ),
-        "value_group": 0,
-        "fixed_value": "Requis",
-        "strip_spaces": False,
-        "unit": None,
-        "confidence": 0.85,
-        "desc_template": "Grillage avertisseur pour canalisations enterrees requis",
-    },
-
-    # =========================================================================
-    # SELECTIVITE
-    # =========================================================================
-    {
-        "rule_type": "selectivite",
-        "context_label": None,
-        "pattern": re.compile(
-            r"s[eé]lectivit[eé][^\n.]{0,60}?"
-            r"(totale|partielle|chronom[eé]trique|amp[eè]rem[eé]trique|verticale|horizontale)",
-            re.IGNORECASE,
-        ),
-        "value_group": 1,
-        "strip_spaces": True,
-        "unit": None,
-        "confidence": 0.85,
-        "desc_template": "Selectivite {value} requise",
-    },
-
-    # =========================================================================
-    # MARQUES IMPOSEES (strip_spaces=False pour garder les espaces lisibles)
+    # MARQUES IMPOSEES
     # =========================================================================
     {
         "rule_type": "marque_imposee",
