@@ -5,12 +5,20 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict
 
 
+class BordereauSheetPreview(BaseModel):
+    """Noms de feuilles disponibles dans un fichier Excel, avant import."""
+
+    sheets: list[str]
+    detected: str | None
+
+
 class BordereauImportResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
     project_id: str
     file_name: str
+    sheet_name: str | None
     indice: str | None
     status: str
     total_lines: int | None

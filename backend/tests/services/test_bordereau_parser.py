@@ -12,11 +12,12 @@ from app.services.bordereau.parser import (
     _detect_cable_type,
     _detect_material,
     _detect_section_mm2,
+    _detect_cfo_sheet_name,
     _enrich_line,
-    _find_cfo_sheet,
     _kind_from_section_code,
     _section_code_from_num_prix,
     detect_indice_from_filename,
+    list_sheet_names,
     parse_bordereau_file,
 )
 from app.models.bordereau import BordereauLine
@@ -169,17 +170,34 @@ def test_parse_dachser_bordereau():
 
 
 @pytest.mark.skipif(not DACHSER_BORDEREAU.exists(), reason="Fichier DACHSER absent")
-def test_parse_dachser_rejects_non_cfo_sheets():
-    """Verifie que seule la feuille BDP_ELECTRICITE CFO est parsee."""
-    import openpyxl
+def test_parse_dachser_detects_cfo_sheet():
+    """Verifie que la feuille BDP_ELECTRICITE CFO est auto-detectee."""
+    content = DACHSER_BORDEREAU.read_bytes()
+    sheets, detected = list_sheet_names(content)
+    assert detected is not None
+    assert "ELECTRICITE" in detected.upper()
+    assert "CFO" in detected.upper()
 
-    wb = openpyxl.load_workbook(str(DACHSER_BORDEREAU), data_only=True, read_only=True)
-    cfo = _find_cfo_sheet(wb)
-    assert cfo is not None
-    # Le nom de la feuille doit contenir ELECTRICITE et CFO
-    assert "ELECTRICITE" in cfo.title.upper()
-    assert "CFO" in cfo.title.upper()
-    wb.close()
+
+def test_detect_cfo_sheet_name_finds_electricite_cfo():
+    """Verifie la detection sur une liste de noms de feuilles."""
+    names = ["RECAP_LOT III", "BDP_FLUIDES", "BDP_ELECTRICITE CFO", "BDP_CFA ET SURETE"]
+    result = _detect_cfo_sheet_name(names)
+    assert result == "BDP_ELECTRICITE CFO"
+
+
+def test_detect_cfo_sheet_name_fallback_to_electricite():
+    """Verifie le fallback sur une feuille contenant juste ELECTRICITE."""
+    names = ["RECAP", "ELECTRICITE GENERALE", "FLUIDES"]
+    result = _detect_cfo_sheet_name(names)
+    assert result == "ELECTRICITE GENERALE"
+
+
+def test_detect_cfo_sheet_name_ignores_recap():
+    """Verifie que les feuilles RECAP/FLUIDE sont ignorees en fallback."""
+    names = ["RECAP_LOT", "BDP_FLUIDES", "ELECTRICITE BT"]
+    result = _detect_cfo_sheet_name(names)
+    assert result == "ELECTRICITE BT"
 
 
 def test_parse_rejects_invalid_file():

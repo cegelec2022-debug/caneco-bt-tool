@@ -1,13 +1,19 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  AlertCircle,
+  AlertTriangle,
+  CheckCircle2,
   ChevronFirst,
   ChevronLast,
   ChevronLeft,
   ChevronRight,
   Download,
   FileSpreadsheet,
+  Info,
   Pencil,
+  Play,
   Search,
+  ShieldAlert,
   Trash2,
   Upload,
   X,
@@ -32,6 +38,13 @@ import {
 } from "@/api/bordereau";
 import { deleteCpsImport, getCpsImport, listCpsImports, uploadCps } from "@/api/cps";
 import { deleteProject, getProject, updateProject } from "@/api/projects";
+import {
+  createVerificationRun,
+  deleteVerificationRun,
+  listVerificationRuns,
+  getVerificationRun,
+  updateGapStatus,
+} from "@/api/verification";
 import { cn } from "@/lib/utils";
 import type {
   BordereauDetail,
@@ -43,7 +56,12 @@ import type {
   CanecoLine,
   CpsImport,
   CpsRule,
+  Gap,
+  GapSeverity,
+  GapStatus,
   ProjectUpdate,
+  VerificationRun,
+  VerificationRunDetail,
 } from "@/types";
 
 // ---------------------------------------------------------------------------
@@ -141,6 +159,7 @@ const TABS = [
   { id: "studies", label: "Etudes" },
   { id: "bordereau", label: "Bordereau" },
   { id: "cps", label: "CPS" },
+  { id: "verifications", label: "Verifications" },
   { id: "tableaux", label: "Tableaux" },
   { id: "doe", label: "DOE" },
 ] as const;
@@ -332,6 +351,8 @@ export default function ProjectPage() {
         {activeTab === "bordereau" && <BordereauTab projectId={id!} />}
 
         {activeTab === "cps" && <CpsTab projectId={id!} />}
+
+        {activeTab === "verifications" && <VerificationsTab projectId={id!} />}
 
         {activeTab === "tableaux" && (
           <div className="flex-1 min-h-0 overflow-auto p-6">
@@ -2663,6 +2684,695 @@ function CpsTab({ projectId }: { projectId: string }) {
               </button>
               <button
                 onClick={() => doDelete(deleteTargetId)}
+                className="px-4 py-2 text-sm bg-red-600 text-white rounded hover:bg-red-700"
+              >
+                Supprimer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Onglet Verifications
+// ---------------------------------------------------------------------------
+
+const SEVERITY_META: Record<GapSeverity, { label: string; color: string; bg: string; icon: React.ReactNode }> = {
+  BLOQUANT: {
+    label: "Bloquant",
+    color: "text-red-700",
+    bg: "bg-red-100",
+    icon: <ShieldAlert size={12} />,
+  },
+  A_CORRIGER: {
+    label: "A corriger",
+    color: "text-orange-700",
+    bg: "bg-orange-100",
+    icon: <AlertCircle size={12} />,
+  },
+  A_SIGNALER: {
+    label: "A signaler",
+    color: "text-yellow-700",
+    bg: "bg-yellow-100",
+    icon: <AlertTriangle size={12} />,
+  },
+  INFO: {
+    label: "Info",
+    color: "text-blue-700",
+    bg: "bg-blue-100",
+    icon: <Info size={12} />,
+  },
+};
+
+const GAP_STATUS_META: Record<GapStatus, { label: string; color: string }> = {
+  ouvert: { label: "Ouvert", color: "text-text-primary" },
+  acquitte: { label: "Acquitte", color: "text-yellow-700" },
+  justifie: { label: "Justifie", color: "text-blue-700" },
+  clos: { label: "Clos", color: "text-status-ok" },
+};
+
+const GAP_CODE_LABELS: Record<string, string> = {
+  "E-001": "Circuit CANECO absent bordereau",
+  "E-002": "Article bordereau sans circuit CANECO",
+  "E-003": "Section cable differente",
+  "E-004": "Protection mal calibree / reglage",
+  "E-005": "Type cable != CPS",
+  "E-006": "Matiere conducteur differente",
+  "E-007": "DDR absent ou insuffisant",
+  "E-008": "Non-conformite NF C 15-100",
+  "E-009": "Chute de tension depassee",
+  "E-010": "Suggestion bonne pratique",
+  "E-011": "Icu insuffisant vs Icc",
+  "E-012": "Selectivite non assuree",
+  "E-013": "Tableau absent bordereau",
+  "E-014": "Cable CPS sans circuit CANECO",
+  "E-015": "Section neutre insuffisante",
+  "E-016": "Conducteur alu < 16 mm²",
+  "E-017": "Type DDR inadapte",
+  "E-018": "Courbe declenchement inadaptee",
+  "E-019": "Cable CPS absent bordereau",
+  "E-020": "Regle CPS non respectee",
+};
+
+function SeverityBadge({ severity }: { severity: GapSeverity }) {
+  const m = SEVERITY_META[severity] ?? SEVERITY_META["INFO"];
+  return (
+    <span className={cn("inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium", m.bg, m.color)}>
+      {m.icon}
+      {m.label}
+    </span>
+  );
+}
+
+function GapStatusBadge({ status }: { status: GapStatus }) {
+  const m = GAP_STATUS_META[status] ?? GAP_STATUS_META["ouvert"];
+  return (
+    <span className={cn("text-[10px] font-medium", m.color)}>
+      {m.label}
+    </span>
+  );
+}
+
+function RunCard({
+  run,
+  isSelected,
+  onSelect,
+  onDelete,
+}: {
+  run: VerificationRun;
+  isSelected: boolean;
+  onSelect: () => void;
+  onDelete: () => void;
+}) {
+  const statusMeta = run.status === "done"
+    ? { label: "Termine", color: "text-status-ok bg-green-50 border-green-200" }
+    : run.status === "error"
+    ? { label: "Erreur", color: "text-status-warn bg-red-50 border-red-200" }
+    : run.status === "running"
+    ? { label: "En cours", color: "text-blue-700 bg-blue-50 border-blue-200" }
+    : { label: "En attente", color: "text-text-tertiary bg-bg-cell border-border-std" };
+
+  return (
+    <div
+      onClick={onSelect}
+      className={cn(
+        "border rounded p-3 cursor-pointer transition-colors",
+        isSelected
+          ? "border-vinci-blue bg-vinci-blue/5"
+          : "border-border-std hover:border-vinci-blue/40 hover:bg-bg-cell"
+      )}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className={cn("text-[10px] font-medium px-1.5 py-0.5 rounded border", statusMeta.color)}>
+              {statusMeta.label}
+            </span>
+            {run.status === "done" && run.total_gaps !== null && (
+              <span className="text-xs text-text-secondary">
+                {run.total_gaps} ecart{run.total_gaps !== 1 ? "s" : ""}
+              </span>
+            )}
+          </div>
+          <div className="text-[10px] text-text-tertiary mt-1">{formatDateTime(run.created_at)}</div>
+          {run.status === "done" && run.total_gaps !== null && run.total_gaps > 0 && (
+            <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+              {run.critical_count !== null && run.critical_count > 0 && (
+                <span className="text-[10px] text-red-700 bg-red-50 px-1.5 py-0.5 rounded">
+                  {run.critical_count} bloquant{run.critical_count !== 1 ? "s" : ""}
+                </span>
+              )}
+              {run.high_count !== null && run.high_count > 0 && (
+                <span className="text-[10px] text-orange-700 bg-orange-50 px-1.5 py-0.5 rounded">
+                  {run.high_count} a corriger
+                </span>
+              )}
+              {run.medium_count !== null && run.medium_count > 0 && (
+                <span className="text-[10px] text-yellow-700 bg-yellow-50 px-1.5 py-0.5 rounded">
+                  {run.medium_count} a signaler
+                </span>
+              )}
+              {run.info_count !== null && run.info_count > 0 && (
+                <span className="text-[10px] text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded">
+                  {run.info_count} info
+                </span>
+              )}
+            </div>
+          )}
+          {run.error_message && (
+            <div className="text-[10px] text-status-warn mt-1 truncate">{run.error_message}</div>
+          )}
+        </div>
+        <button
+          onClick={(e) => { e.stopPropagation(); onDelete(); }}
+          className="text-text-tertiary hover:text-status-warn transition-colors shrink-0 mt-0.5"
+          title="Supprimer ce run"
+        >
+          <Trash2 size={12} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function GapDetailPanel({
+  gap,
+  onClose,
+  onUpdateStatus,
+}: {
+  gap: Gap;
+  onClose: () => void;
+  onUpdateStatus: (gapId: string, status: GapStatus, comment?: string) => void;
+}) {
+  const [newStatus, setNewStatus] = useState<GapStatus>(gap.status);
+  const [comment, setComment] = useState(gap.comment ?? "");
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-t sm:rounded shadow-lg w-full max-w-lg max-h-[80vh] flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-3 border-b border-border-std shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <SeverityBadge severity={gap.severity} />
+            <span className="font-mono text-xs text-text-tertiary">{gap.code}</span>
+            <span className="text-sm font-medium text-text-primary truncate">{gap.title}</span>
+          </div>
+          <button onClick={onClose} className="text-text-tertiary hover:text-text-primary shrink-0">
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="overflow-auto flex-1 p-5 space-y-4">
+          <div>
+            <div className="text-xs font-medium text-text-tertiary uppercase tracking-wide mb-1">Description</div>
+            <p className="text-sm text-text-primary leading-relaxed">{gap.description}</p>
+          </div>
+
+          {gap.suggested_action && (
+            <div>
+              <div className="text-xs font-medium text-text-tertiary uppercase tracking-wide mb-1">Action suggeree</div>
+              <p className="text-sm text-blue-700 bg-blue-50 rounded p-2 leading-relaxed">{gap.suggested_action}</p>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-3 text-xs">
+            {gap.caneco_repere && (
+              <div>
+                <div className="text-text-tertiary mb-0.5">Repere CANECO</div>
+                <div className="font-mono font-medium">{gap.caneco_repere}</div>
+              </div>
+            )}
+            {gap.bordereau_num_prix && (
+              <div>
+                <div className="text-text-tertiary mb-0.5">N° Prix bordereau</div>
+                <div className="font-mono font-medium">{gap.bordereau_num_prix}</div>
+              </div>
+            )}
+            {gap.norm_rule_code && (
+              <div>
+                <div className="text-text-tertiary mb-0.5">Regle normative</div>
+                <div className="font-medium">{gap.norm_rule_code}</div>
+              </div>
+            )}
+          </div>
+
+          {gap.fields_compared && Object.keys(gap.fields_compared).length > 0 && (
+            <div>
+              <div className="text-xs font-medium text-text-tertiary uppercase tracking-wide mb-1">Champs compares</div>
+              <div className="bg-bg-cell rounded p-2 space-y-1">
+                {Object.entries(gap.fields_compared).map(([k, v]) => (
+                  <div key={k} className="flex items-center justify-between text-xs">
+                    <span className="text-text-secondary font-mono">{k}</span>
+                    <span className="font-medium text-text-primary">{String(v)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Statut */}
+          <div className="pt-2 border-t border-border-std space-y-2">
+            <div className="text-xs font-medium text-text-tertiary uppercase tracking-wide">Gestion de l'ecart</div>
+            <div className="flex items-center gap-2">
+              <select
+                value={newStatus}
+                onChange={(e) => setNewStatus(e.target.value as GapStatus)}
+                className="text-sm border border-border-std rounded px-2 py-1 focus:outline-none focus:border-vinci-blue bg-white"
+              >
+                <option value="ouvert">Ouvert</option>
+                <option value="acquitte">Acquitte</option>
+                <option value="justifie">Justifie</option>
+                <option value="clos">Clos</option>
+              </select>
+            </div>
+            <textarea
+              rows={2}
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              placeholder="Commentaire (optionnel)..."
+              className="w-full text-sm border border-border-std rounded px-2 py-1.5 focus:outline-none focus:border-vinci-blue resize-none"
+            />
+            <button
+              onClick={() => onUpdateStatus(gap.id, newStatus, comment || undefined)}
+              disabled={newStatus === gap.status && !comment}
+              className="px-4 py-1.5 text-sm bg-vinci-blue text-white rounded hover:bg-vinci-blue/90 transition-colors disabled:opacity-40"
+            >
+              Enregistrer
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function VerificationsTab({ projectId }: { projectId: string }) {
+  const queryClient = useQueryClient();
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const [filterSeverity, setFilterSeverity] = useState<string>("");
+  const [filterStatus, setFilterStatus] = useState<string>("");
+  const [confirmDeleteRunId, setConfirmDeleteRunId] = useState<string | null>(null);
+  const [selectedGap, setSelectedGap] = useState<Gap | null>(null);
+
+  // Lancer un run
+  const [showLaunch, setShowLaunch] = useState(false);
+  const [launchCaneco, setLaunchCaneco] = useState("");
+  const [launchBordereau, setLaunchBordereau] = useState("");
+  const [launchCps, setLaunchCps] = useState("");
+  const [launchIcc, setLaunchIcc] = useState("");
+  const [launchError, setLaunchError] = useState<string | null>(null);
+
+  // Donnees
+  const { data: runs, isLoading: loadingRuns } = useQuery({
+    queryKey: ["verification-runs", projectId],
+    queryFn: () => listVerificationRuns(projectId),
+  });
+
+  const { data: runDetail, isLoading: loadingDetail } = useQuery({
+    queryKey: ["verification-run-detail", projectId, selectedRunId],
+    queryFn: () => getVerificationRun(projectId, selectedRunId!),
+    enabled: !!selectedRunId,
+  });
+
+  // Donnees pour le formulaire de lancement
+  const { data: exportsForForm } = useQuery({
+    queryKey: ["caneco", projectId],
+    queryFn: () => listCaneco(projectId),
+  });
+  const { data: bordereauForForm } = useQuery({
+    queryKey: ["bordereau", projectId],
+    queryFn: () => listBordereau(projectId),
+  });
+  const { data: cpsForForm } = useQuery({
+    queryKey: ["cps", projectId],
+    queryFn: () => listCpsImports(projectId),
+  });
+
+  const { mutate: doCreate, isPending: isCreating } = useMutation({
+    mutationFn: () =>
+      createVerificationRun(projectId, {
+        caneco_export_id: launchCaneco,
+        bordereau_import_id: launchBordereau,
+        cps_import_id: launchCps || undefined,
+        icc_presumed_ka: launchIcc ? parseFloat(launchIcc) : undefined,
+      }),
+    onSuccess: (run) => {
+      queryClient.invalidateQueries({ queryKey: ["verification-runs", projectId] });
+      setSelectedRunId(run.id);
+      setShowLaunch(false);
+      setLaunchError(null);
+    },
+    onError: (err: unknown) => {
+      const msg =
+        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
+        "Erreur lors du lancement.";
+      setLaunchError(msg);
+    },
+  });
+
+  const { mutate: doDeleteRun } = useMutation({
+    mutationFn: (runId: string) => deleteVerificationRun(projectId, runId),
+    onSuccess: (_, runId) => {
+      queryClient.invalidateQueries({ queryKey: ["verification-runs", projectId] });
+      if (selectedRunId === runId) setSelectedRunId(null);
+      setConfirmDeleteRunId(null);
+    },
+  });
+
+  const { mutate: doUpdateGap } = useMutation({
+    mutationFn: ({ gapId, status, comment }: { gapId: string; status: GapStatus; comment?: string }) =>
+      updateGapStatus(projectId, selectedRunId!, gapId, { status, comment }),
+    onSuccess: (updatedGap) => {
+      queryClient.setQueryData(
+        ["verification-run-detail", projectId, selectedRunId],
+        (old: VerificationRunDetail | undefined) => {
+          if (!old) return old;
+          return {
+            ...old,
+            gaps: old.gaps.map((g) => (g.id === updatedGap.id ? updatedGap : g)),
+          };
+        }
+      );
+      setSelectedGap(null);
+    },
+  });
+
+  // Filtre local sur les gaps
+  const filteredGaps = (runDetail?.gaps ?? []).filter((g) => {
+    if (filterSeverity && g.severity !== filterSeverity) return false;
+    if (filterStatus && g.status !== filterStatus) return false;
+    return true;
+  });
+
+  // KPI du run selectionne
+  const kpis = runDetail
+    ? [
+        { label: "Bloquants", count: runDetail.critical_count ?? 0, color: "text-red-700", bg: "bg-red-50 border-red-200" },
+        { label: "A corriger", count: runDetail.high_count ?? 0, color: "text-orange-700", bg: "bg-orange-50 border-orange-200" },
+        { label: "A signaler", count: runDetail.medium_count ?? 0, color: "text-yellow-700", bg: "bg-yellow-50 border-yellow-200" },
+        { label: "Info", count: runDetail.info_count ?? 0, color: "text-blue-700", bg: "bg-blue-50 border-blue-200" },
+      ]
+    : [];
+
+  if (loadingRuns) {
+    return <div className="p-6 text-sm text-text-tertiary">Chargement...</div>;
+  }
+
+  return (
+    <div className="flex-1 min-h-0 overflow-auto p-6 space-y-5">
+
+      {/* Bandeau intro */}
+      <div className="bg-vinci-blue/5 border border-vinci-blue/20 rounded p-3 text-xs text-vinci-blue">
+        Le moteur de verification croise l'export CANECO, le bordereau et les regles CPS
+        pour detecter les ecarts et non-conformites NF C 15-100.
+      </div>
+
+      {/* Header + bouton lancer */}
+      <div className="flex items-center justify-between gap-4">
+        <h3 className="text-sm font-semibold text-text-primary">Historique des verifications</h3>
+        <button
+          onClick={() => setShowLaunch(true)}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-vinci-blue text-white rounded hover:bg-vinci-blue/90 transition-colors"
+        >
+          <Play size={11} />
+          Lancer une verification
+        </button>
+      </div>
+
+      {/* Liste des runs */}
+      {(!runs || runs.length === 0) ? (
+        <div className="border border-dashed border-border-std rounded p-8 text-center">
+          <ShieldAlert size={28} className="mx-auto text-text-tertiary mb-2" />
+          <p className="text-sm text-text-secondary">Aucune verification lancee.</p>
+          <p className="text-xs text-text-tertiary mt-1">
+            Cliquez sur "Lancer une verification" pour analyser les donnees du projet.
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {runs.map((r) => (
+            <RunCard
+              key={r.id}
+              run={r}
+              isSelected={r.id === selectedRunId}
+              onSelect={() => setSelectedRunId(r.id)}
+              onDelete={() => setConfirmDeleteRunId(r.id)}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Detail du run selectionne */}
+      {selectedRunId && runDetail && (
+        <div className="space-y-4">
+          {/* KPI cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {kpis.map((kpi) => (
+              <div key={kpi.label} className={cn("border rounded p-3 text-center", kpi.bg)}>
+                <div className={cn("text-2xl font-bold", kpi.color)}>{kpi.count}</div>
+                <div className={cn("text-[11px] font-medium mt-0.5", kpi.color)}>{kpi.label}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Barre de filtres */}
+          <div className="flex items-center gap-3 flex-wrap">
+            <span className="text-xs text-text-tertiary">Filtrer :</span>
+            <select
+              value={filterSeverity}
+              onChange={(e) => setFilterSeverity(e.target.value)}
+              className="text-xs border border-border-std rounded px-2 py-1 bg-white focus:outline-none focus:border-vinci-blue"
+            >
+              <option value="">Toutes severites</option>
+              <option value="BLOQUANT">Bloquant</option>
+              <option value="A_CORRIGER">A corriger</option>
+              <option value="A_SIGNALER">A signaler</option>
+              <option value="INFO">Info</option>
+            </select>
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className="text-xs border border-border-std rounded px-2 py-1 bg-white focus:outline-none focus:border-vinci-blue"
+            >
+              <option value="">Tous statuts</option>
+              <option value="ouvert">Ouvert</option>
+              <option value="acquitte">Acquitte</option>
+              <option value="justifie">Justifie</option>
+              <option value="clos">Clos</option>
+            </select>
+            <span className="text-xs text-text-tertiary ml-auto">
+              {filteredGaps.length} ecart{filteredGaps.length !== 1 ? "s" : ""}
+              {runDetail.duration_seconds !== null && (
+                <span> — {runDetail.duration_seconds.toFixed(1)}s</span>
+              )}
+            </span>
+          </div>
+
+          {/* Tableau des ecarts */}
+          {filteredGaps.length === 0 ? (
+            <div className="border border-border-std rounded p-6 text-center">
+              <CheckCircle2 size={24} className="mx-auto text-status-ok mb-2" />
+              <p className="text-sm text-text-secondary">
+                {runDetail.total_gaps === 0
+                  ? "Aucun ecart detecte sur ce run."
+                  : "Aucun ecart ne correspond aux filtres actifs."}
+              </p>
+            </div>
+          ) : (
+            <div className="border border-border-std rounded">
+              <table className="w-full text-xs">
+                <thead className="sticky top-0 z-10" style={{ backgroundColor: "#001E50" }}>
+                  <tr>
+                    <th className="px-3 py-2 text-left font-medium text-white/80 w-[90px]">Code</th>
+                    <th className="px-3 py-2 text-left font-medium text-white/80 w-[100px]">Severite</th>
+                    <th className="px-3 py-2 text-left font-medium text-white/80">Titre</th>
+                    <th className="px-3 py-2 text-left font-medium text-white/80 w-[120px] hidden sm:table-cell">Repere</th>
+                    <th className="px-3 py-2 text-left font-medium text-white/80 w-[80px]">Statut</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredGaps.map((gap, i) => (
+                    <tr
+                      key={gap.id}
+                      onClick={() => setSelectedGap(gap)}
+                      className={cn(
+                        "border-t border-border-std cursor-pointer transition-colors",
+                        i % 2 === 0 ? "bg-white" : "bg-bg-cell/40",
+                        "hover:bg-vinci-blue/5"
+                      )}
+                    >
+                      <td className="px-3 py-2 font-mono text-text-tertiary" title={GAP_CODE_LABELS[gap.code]}>{gap.code}</td>
+                      <td className="px-3 py-2">
+                        <SeverityBadge severity={gap.severity} />
+                      </td>
+                      <td className="px-3 py-2 text-text-primary">
+                        <div className="truncate max-w-[300px]">{gap.title}</div>
+                        {gap.norm_rule_code && (
+                          <div className="text-[10px] text-text-tertiary font-mono">{gap.norm_rule_code}</div>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 font-mono text-text-secondary hidden sm:table-cell">
+                        {gap.caneco_repere ?? gap.bordereau_num_prix ?? "—"}
+                      </td>
+                      <td className="px-3 py-2">
+                        <GapStatusBadge status={gap.status} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {selectedRunId && loadingDetail && (
+        <div className="text-sm text-text-tertiary">Chargement des ecarts...</div>
+      )}
+
+      {/* Modal lancer verification */}
+      {showLaunch && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded shadow-lg w-full max-w-md">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-border-std">
+              <h3 className="font-semibold text-text-primary">Lancer une verification</h3>
+              <button
+                onClick={() => { setShowLaunch(false); setLaunchError(null); }}
+                className="text-text-tertiary hover:text-text-primary"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div>
+                <label className="block text-xs text-text-secondary mb-1">
+                  Export CANECO <span className="text-status-warn">*</span>
+                </label>
+                <select
+                  value={launchCaneco}
+                  onChange={(e) => setLaunchCaneco(e.target.value)}
+                  className="w-full border border-border-std rounded px-2 py-1.5 text-sm focus:outline-none focus:border-vinci-blue bg-white"
+                >
+                  <option value="">-- Selectionner --</option>
+                  {(exportsForForm ?? [])
+                    .filter((e) => e.status === "parsed")
+                    .map((e) => (
+                      <option key={e.id} value={e.id}>
+                        Indice {e.indice} — {e.file_name} ({e.line_count} lignes)
+                      </option>
+                    ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-text-secondary mb-1">
+                  Bordereau <span className="text-status-warn">*</span>
+                </label>
+                <select
+                  value={launchBordereau}
+                  onChange={(e) => setLaunchBordereau(e.target.value)}
+                  className="w-full border border-border-std rounded px-2 py-1.5 text-sm focus:outline-none focus:border-vinci-blue bg-white"
+                >
+                  <option value="">-- Selectionner --</option>
+                  {(bordereauForForm ?? [])
+                    .filter((b) => b.status === "parsed")
+                    .map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.file_name} ({b.total_articles} articles)
+                      </option>
+                    ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-text-secondary mb-1">CPS (optionnel)</label>
+                <select
+                  value={launchCps}
+                  onChange={(e) => setLaunchCps(e.target.value)}
+                  className="w-full border border-border-std rounded px-2 py-1.5 text-sm focus:outline-none focus:border-vinci-blue bg-white"
+                >
+                  <option value="">-- Sans CPS --</option>
+                  {(cpsForForm ?? [])
+                    .filter((c) => c.status === "parsed")
+                    .map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.file_name} ({c.rules_count} regles)
+                      </option>
+                    ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-text-secondary mb-1">
+                  Icc presume (kA) — defaut 6 kA
+                </label>
+                <input
+                  type="number"
+                  min="0.1"
+                  max="100"
+                  step="0.1"
+                  value={launchIcc}
+                  onChange={(e) => setLaunchIcc(e.target.value)}
+                  placeholder="6"
+                  className="w-full border border-border-std rounded px-2 py-1.5 text-sm focus:outline-none focus:border-vinci-blue"
+                />
+              </div>
+              {launchError && <p className="text-xs text-status-warn">{launchError}</p>}
+              <div className="flex gap-3 justify-end pt-2">
+                <button
+                  onClick={() => { setShowLaunch(false); setLaunchError(null); }}
+                  className="px-4 py-2 text-sm text-text-secondary border border-border-std rounded hover:bg-bg-cell"
+                >
+                  Annuler
+                </button>
+                <button
+                  onClick={() => {
+                    if (!launchCaneco || !launchBordereau) {
+                      setLaunchError("Selectionnez un export CANECO et un bordereau.");
+                      return;
+                    }
+                    doCreate();
+                  }}
+                  disabled={isCreating}
+                  className="px-4 py-2 text-sm bg-vinci-blue text-white rounded hover:bg-vinci-blue/90 disabled:opacity-50"
+                >
+                  {isCreating ? "Analyse en cours..." : "Lancer la verification"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal detail ecart */}
+      {selectedGap && (
+        <GapDetailPanel
+          gap={selectedGap}
+          onClose={() => setSelectedGap(null)}
+          onUpdateStatus={(gapId, status, comment) =>
+            doUpdateGap({ gapId, status, comment })
+          }
+        />
+      )}
+
+      {/* Confirmation suppression run */}
+      {confirmDeleteRunId && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded shadow-lg max-w-sm w-full p-5 space-y-4">
+            <h4 className="font-semibold text-sm text-text-primary">Supprimer ce run ?</h4>
+            <p className="text-xs text-text-secondary">
+              Tous les ecarts associes seront supprimes. Cette action est irreversible.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setConfirmDeleteRunId(null)}
+                className="px-4 py-2 text-sm text-text-secondary border border-border-std rounded hover:bg-bg-cell"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={() => doDeleteRun(confirmDeleteRunId)}
                 className="px-4 py-2 text-sm bg-red-600 text-white rounded hover:bg-red-700"
               >
                 Supprimer

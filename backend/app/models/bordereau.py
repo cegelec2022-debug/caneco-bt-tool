@@ -19,6 +19,8 @@ class BordereauImport(Base):
     file_name: Mapped[str] = mapped_column(String(500), nullable=False)
     file_path: Mapped[str | None] = mapped_column(String(500))
     indice: Mapped[str | None] = mapped_column(String(20))
+    # Nom de la feuille Excel utilisee lors du parsing
+    sheet_name: Mapped[str | None] = mapped_column(String(255))
     # uploaded | parsing | parsed | error
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="uploaded")
     total_lines: Mapped[int | None] = mapped_column(Integer)

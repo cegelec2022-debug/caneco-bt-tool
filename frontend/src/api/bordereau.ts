@@ -1,4 +1,4 @@
-import type { BordereauDetail, BordereauImport } from "@/types";
+import type { BordereauDetail, BordereauImport, BordereauSheetPreview } from "@/types";
 import api from "./client";
 
 export async function listBordereau(projectId: string): Promise<BordereauImport[]> {
@@ -6,14 +6,30 @@ export async function listBordereau(projectId: string): Promise<BordereauImport[
   return data;
 }
 
+export async function previewBordereauSheets(
+  projectId: string,
+  file: File
+): Promise<BordereauSheetPreview> {
+  const form = new FormData();
+  form.append("file", file);
+  const { data } = await api.post<BordereauSheetPreview>(
+    `/projects/${projectId}/bordereau/preview-sheets`,
+    form,
+    { headers: { "Content-Type": "multipart/form-data" } }
+  );
+  return data;
+}
+
 export async function uploadBordereau(
   projectId: string,
   file: File,
-  indice: string
+  indice: string,
+  sheetName: string
 ): Promise<BordereauImport> {
   const form = new FormData();
   form.append("file", file);
   form.append("indice", indice);
+  form.append("sheet_name", sheetName);
   const { data } = await api.post<BordereauImport>(
     `/projects/${projectId}/bordereau/upload`,
     form,

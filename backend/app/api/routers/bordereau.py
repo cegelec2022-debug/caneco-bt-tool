@@ -15,8 +15,10 @@ from app.schemas.bordereau import (
     BordereauImportResponse,
     BordereauLineResponse,
     BordereauSectionResponse,
+    BordereauSheetPreview,
 )
 from app.services.bordereau import service as bordereau_service
+from app.services.bordereau.parser import list_sheet_names
 
 router = APIRouter(prefix="/api/projects", tags=["bordereau"])
 
@@ -46,6 +48,49 @@ def _get_import_or_404(import_id: str, project_id: str, db: Session) -> Borderea
 
 
 @router.post(
+    "/{project_id}/bordereau/preview-sheets",
+    response_model=BordereauSheetPreview,
+    status_code=status.HTTP_200_OK,
+)
+@limiter.limit("30/minute")
+async def preview_sheets(
+    request: Request,
+    project_id: str,
+    file: UploadFile,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> BordereauSheetPreview:
+    """Lit les noms de feuilles d'un fichier Excel sans le parser ni le persister.
+
+    Permet au frontend de proposer un choix de feuille avant l'import.
+    """
+    _check_project_access(project_id, db, current_user)
+
+    if not file.filename or not file.filename.lower().endswith((".xlsx", ".xlsm")):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Le fichier doit etre au format .xlsx.",
+        )
+
+    content = await file.read()
+    if len(content) > 50 * 1024 * 1024:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Fichier trop volumineux (max 50 Mo).",
+        )
+
+    try:
+        sheets, detected = list_sheet_names(content)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Impossible de lire les feuilles du fichier : {exc}",
+        ) from exc
+
+    return BordereauSheetPreview(sheets=sheets, detected=detected)
+
+
+@router.post(
     "/{project_id}/bordereau/upload",
     response_model=BordereauImportResponse,
     status_code=status.HTTP_201_CREATED,
@@ -56,11 +101,16 @@ async def upload_bordereau(
     project_id: str,
     file: UploadFile,
     indice: str = Form(default=""),
+    sheet_name: str = Form(default=""),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> BordereauImportResponse:
-    """Upload et parse un bordereau de prix (feuille BDP_ELECTRICITE CFO)."""
+    """Upload et parse un bordereau de prix.
+
+    sheet_name : nom exact de la feuille a parser (optionnel — auto-detecte si absent).
+    """
     indice_val: str | None = indice.strip().upper() or None
+    sheet_val: str | None = sheet_name.strip() or None
     _check_project_access(project_id, db, current_user)
 
     imp = bordereau_service.upload_and_parse(
@@ -69,6 +119,7 @@ async def upload_bordereau(
         user_id=current_user.id,
         file=file,
         indice=indice_val,
+        sheet_name=sheet_val,
     )
     return BordereauImportResponse.model_validate(imp)
 

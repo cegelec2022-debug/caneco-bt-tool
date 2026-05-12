@@ -76,6 +76,7 @@ def upload_and_parse(
     user_id: str,
     file: UploadFile,
     indice: str | None = None,
+    sheet_name: str | None = None,
 ) -> BordereauImport:
     """Upload le fichier, parse la feuille CFO et persiste les donnees.
 
@@ -92,6 +93,7 @@ def upload_and_parse(
         file_name=file.filename or "bordereau.xlsx",
         file_path=str(dest_path.relative_to(_UPLOAD_ROOT.parent)),
         indice=detected_indice,
+        sheet_name=sheet_name,
         status="parsing",
         created_by_id=user_id,
     )
@@ -99,7 +101,7 @@ def upload_and_parse(
     db.flush()  # obtenir imp.id avant le parsing
 
     try:
-        result = parse_bordereau_file(dest_path, imp.id)
+        result = parse_bordereau_file(dest_path, imp.id, sheet_name=sheet_name)
 
         for section in result.sections:
             db.add(section)
@@ -112,6 +114,7 @@ def upload_and_parse(
         imp.total_lines = result.total_lines
         imp.total_articles = result.total_articles
         imp.sections_count = result.sections_count
+        imp.sheet_name = result.sheet_name_used
         imp.updated_at = datetime.utcnow()
 
     except Exception as exc:

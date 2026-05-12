@@ -191,3 +191,67 @@ export interface CpsImportDetail {
   imp: CpsImport;
   rules: CpsRule[];
 }
+
+// ---------------------------------------------------------------------------
+// Verification
+// ---------------------------------------------------------------------------
+
+export type GapSeverity = "BLOQUANT" | "A_CORRIGER" | "A_SIGNALER" | "INFO";
+export type GapStatus = "ouvert" | "acquitte" | "justifie" | "clos";
+
+export interface Gap {
+  id: string;
+  run_id: string;
+  code: string;
+  title: string;
+  severity: GapSeverity;
+  description: string;
+  fields_compared: Record<string, unknown> | null;
+  suggested_action: string | null;
+  norm_rule_code: string | null;
+  caneco_line_id: string | null;
+  bordereau_line_id: string | null;
+  caneco_repere: string | null;
+  bordereau_num_prix: string | null;
+  status: GapStatus;
+  comment: string | null;
+  resolved_by_id: string | null;
+  resolved_at: string | null;
+  created_at: string;
+}
+
+export interface VerificationRun {
+  id: string;
+  project_id: string;
+  caneco_export_id: string | null;
+  bordereau_import_id: string | null;
+  cps_import_id: string | null;
+  status: "pending" | "running" | "done" | "error";
+  triggered_by: string;
+  config_snapshot: Record<string, unknown> | null;
+  duration_seconds: number | null;
+  total_gaps: number | null;
+  critical_count: number | null;
+  high_count: number | null;
+  medium_count: number | null;
+  info_count: number | null;
+  error_message: string | null;
+  created_at: string;
+  created_by_id: string | null;
+}
+
+export interface VerificationRunDetail extends VerificationRun {
+  gaps: Gap[];
+}
+
+export interface VerificationRunCreate {
+  caneco_export_id: string;
+  bordereau_import_id: string;
+  cps_import_id?: string;
+  icc_presumed_ka?: number;
+}
+
+export interface GapStatusUpdate {
+  status: GapStatus;
+  comment?: string;
+}

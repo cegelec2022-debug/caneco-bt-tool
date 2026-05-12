@@ -1,18 +1,30 @@
-"""Parser du bordereau de prix — feuille BDP_ELECTRICITE CFO uniquement.
+"""Parser du bordereau de prix — feuille choisie par l'utilisateur ou auto-detectee.
 
-Logique :
-- Detecter la feuille contenant "ELECTRICITE" et "CFO" (insensible a la casse)
-- Trouver la ligne d'en-tete contenant "N°PRIX" (ou variantes)
-- Parser chaque ligne selon son type : section principale, sous-section, sous-famille, article
-- Enrichir les articles cables (section 505) avec des infos regex (section mm2, materiau, type)
+Logique de detection de feuille :
+  1. Si sheet_name est fourni → utiliser directement cette feuille
+  2. Sinon → chercher une feuille dont le nom contient "ELECTRICITE" et "CFO"
+  3. Sinon → chercher une feuille contenant "ELECTRICITE"
+  4. Sinon → utiliser la premiere feuille qui n'est pas de type recap/fluide/IT
+  5. Sinon → lever une erreur listant les feuilles disponibles
 
-Format du fichier DACHSER :
-  Ligne 6 (approximatif) : N°PRIX | DESIGNATION | U | Qte totale | Prix unitaire | Montant Total
-  Ligne 7+ : contenu hierarchique
+Logique de parsing adaptative :
+  - En-tete : ligne contenant "N°PRIX" (ou variantes)
+  - Sections principales : col A matche \d{3,4}-.+ (ex. "500-ELECTRICITE CFO")
+  - Sous-sections    : col A matche \d{2,4} seul (ex. "505", "50")
+  - Articles         : col A matche \d+\.\d+ (ex. "505.3", "1.1", "5001.2")
+  - Sous-familles    : col A vide, col B contient texte (titre intermediaire)
+  - Fallback section : si aucune section detectee, creer une section "000 - General"
+
+Enrichissement des cables (section 505 ou type detecte "cable") :
+  - detected_section_mm2 : "5G6", "1X240", "4X95+T50"
+  - detected_material    : "ALU" ou "CUIVRE"
+  - detected_cable_type  : "U1000AR2V", "U1000R2V", "CR1", "FR-N1X1", "H07VR"
+  - detected_kind        : "cable", "tableau", "chemin_cable", "tubage", etc.
 """
 
 import re
 import uuid
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 
@@ -21,13 +33,22 @@ from loguru import logger
 
 from app.models.bordereau import BordereauImport, BordereauLine, BordereauSection
 
-# --- Patterns de reconnaissance des lignes ---
+# ---------------------------------------------------------------------------
+# Patterns de reconnaissance des lignes
+# ---------------------------------------------------------------------------
 
-_RE_SECTION_MAIN = re.compile(r"^\d{3}-.+")   # ex. "500-ELECTRICITE COURANT FORT"
-_RE_SECTION_SUB = re.compile(r"^\d{3}$")       # ex. "505"
-_RE_ARTICLE = re.compile(r"^\d{3}\.\d+$")      # ex. "505.3"
+# Section principale : "500-ELECTRICITE COURANT FORT", "5000-ELECTRICITE"
+_RE_SECTION_MAIN = re.compile(r"^\d{3,4}-.+")
 
-# --- Patterns d'enrichissement cables ---
+# Sous-section : "505", "50", "5005" (2 a 4 chiffres seuls)
+_RE_SECTION_SUB = re.compile(r"^\d{2,4}$")
+
+# Article : tout pattern "code.numero" (ex. "505.3", "1.1", "5001.2", "A.1")
+_RE_ARTICLE = re.compile(r"^[\w]+\.\d+$")
+
+# ---------------------------------------------------------------------------
+# Patterns d'enrichissement cables
+# ---------------------------------------------------------------------------
 
 # Section conducteur : "5G6", "1X240", "4X95+T50", "3x1.5", "2x2.5"
 _RE_SECTION_MM2 = re.compile(
@@ -36,11 +57,13 @@ _RE_SECTION_MM2 = re.compile(
 )
 
 # Type de cable : U1000R2V, U1000AR2V, U1000RO2V, U1000ARO2V, CR1, FR-N1X1, H07VR
-# Pattern : U1000 + optionnel A (aluminium) + R + optionnel O + 2V
 _RE_CABLE_TYPE = re.compile(
     r"(U1000\s*A?\s*R\s*O?\s*2V|CR1|FR-N1X1|H07[VRU][RN]?-?[FKR]?)",
     re.IGNORECASE,
 )
+
+# Feuilles a ignorer lors de l'auto-detection (fluides, IT, recap)
+_SHEET_IGNORE_KEYWORDS = {"FLUIDE", "PLOMBERIE", "RECAP", "IT", "PRECABLAGE", "CFA", "SURETE"}
 
 # Mapping code section → detected_kind
 _SECTION_KIND_MAP: dict[str, str] = {
@@ -54,6 +77,11 @@ _SECTION_KIND_MAP: dict[str, str] = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Utilitaires
+# ---------------------------------------------------------------------------
+
+
 def _cell_str(cell: Any) -> str | None:
     """Retourne la valeur d'une cellule comme chaine, ou None si vide."""
     if cell is None or cell.value is None:
@@ -62,47 +90,117 @@ def _cell_str(cell: Any) -> str | None:
     return val if val else None
 
 
-def _find_cfo_sheet(wb: openpyxl.Workbook) -> openpyxl.worksheet.worksheet.Worksheet:
-    """Detecte la feuille BDP_ELECTRICITE CFO.
+def _is_all_caps_title(text: str) -> bool:
+    """Retourne True si le texte ressemble a un titre de section en majuscules."""
+    stripped = re.sub(r"[^A-Za-z]", "", text)
+    if len(stripped) < 4:
+        return False
+    return stripped == stripped.upper()
 
-    Cherche une feuille dont le nom contient "ELECTRICITE" et "CFO"
-    (insensible a la casse, insensible aux espaces).
 
-    Raises:
-        ValueError: si aucune feuille correspondante n'est trouvee.
+# ---------------------------------------------------------------------------
+# Detection de la feuille
+# ---------------------------------------------------------------------------
+
+
+def list_sheet_names(file_content: bytes) -> tuple[list[str], str | None]:
+    """Lit les noms de feuilles d'un fichier Excel et retourne la feuille recommandee.
+
+    Args:
+        file_content: Contenu binaire du fichier Excel.
+
+    Returns:
+        Tuple (liste_de_feuilles, feuille_recommandee_ou_None).
     """
-    for name in wb.sheetnames:
+    wb = openpyxl.load_workbook(BytesIO(file_content), read_only=True)
+    sheets = list(wb.sheetnames)
+    wb.close()
+
+    detected = _detect_cfo_sheet_name(sheets)
+    return sheets, detected
+
+
+def _detect_cfo_sheet_name(sheet_names: list[str]) -> str | None:
+    """Trouve le nom de la feuille BDP_ELECTRICITE CFO parmi une liste."""
+    # Passage 1 : electricite + CFO
+    for name in sheet_names:
         normalized = re.sub(r"\s+", "", name).upper()
         if "ELECTRICITE" in normalized and "CFO" in normalized:
-            logger.info(f"Feuille BDP detectee : '{name}'")
-            return wb[name]  # type: ignore[return-value]
+            return name
+    # Passage 2 : electricite seul
+    for name in sheet_names:
+        normalized = re.sub(r"\s+", "", name).upper()
+        if "ELECTRICITE" in normalized:
+            return name
+    # Passage 3 : premiere feuille qui n'est pas a ignorer
+    for name in sheet_names:
+        upper = re.sub(r"\s+", "", name).upper()
+        if not any(kw in upper for kw in _SHEET_IGNORE_KEYWORDS):
+            return name
+    return None
+
+
+def _find_sheet(wb: openpyxl.Workbook, sheet_name: str | None) -> Any:
+    """Retourne la feuille demandee ou auto-detectee.
+
+    Args:
+        wb: Workbook deja ouvert.
+        sheet_name: Nom de feuille explicite (None = auto-detection).
+
+    Raises:
+        ValueError: Si la feuille n'est pas trouvee.
+    """
+    if sheet_name:
+        if sheet_name in wb.sheetnames:
+            logger.info(f"Feuille selectionnee : '{sheet_name}'")
+            return wb[sheet_name]
+        raise ValueError(
+            f"Feuille '{sheet_name}' introuvable. "
+            f"Feuilles disponibles : {wb.sheetnames}"
+        )
+
+    detected = _detect_cfo_sheet_name(list(wb.sheetnames))
+    if detected:
+        logger.info(f"Feuille auto-detectee : '{detected}'")
+        return wb[detected]
 
     raise ValueError(
-        f"Aucune feuille 'BDP_ELECTRICITE CFO' trouvee dans le fichier. "
-        f"Feuilles disponibles : {wb.sheetnames}"
+        f"Aucune feuille electrique detectee automatiquement. "
+        f"Feuilles disponibles : {wb.sheetnames}. "
+        f"Specifiez le nom de la feuille a analyser."
     )
+
+
+# ---------------------------------------------------------------------------
+# Detection de la ligne d'en-tete
+# ---------------------------------------------------------------------------
 
 
 def _find_header_row(ws: Any) -> int:
     """Trouve le numero de la ligne d'en-tete (contenant N°PRIX ou N° PRIX).
 
     Returns:
-        Numero de ligne (1-indexed) de l'en-tete.
+        Numero de ligne (1-indexed).
 
     Raises:
-        ValueError: si l'en-tete n'est pas trouve dans les 20 premieres lignes.
+        ValueError: Si l'en-tete n'est pas trouve dans les 20 premieres lignes.
     """
     for row_num in range(1, 21):
         for cell in ws[row_num]:
             val = _cell_str(cell)
-            if val and re.search(r"N[°o]?\s*PRIX", val, re.IGNORECASE):
+            if val and re.search(r"N[°uo]?\s*PRIX", val, re.IGNORECASE):
                 logger.info(f"Ligne d'en-tete trouvee a la ligne {row_num}")
                 return row_num
     raise ValueError("En-tete 'N°PRIX' introuvable dans les 20 premieres lignes du fichier.")
 
 
+# ---------------------------------------------------------------------------
+# Enrichissement des lignes
+# ---------------------------------------------------------------------------
+
+
 def _detect_material(text: str) -> str | None:
-    """Detecte le materiau conducteur depuis un texte (designation ou sous-famille)."""
+    """Detecte le materiau conducteur depuis un texte."""
     upper = text.upper()
     if re.search(r"\bALU\b|ALUM", upper):
         return "ALU"
@@ -112,16 +210,15 @@ def _detect_material(text: str) -> str | None:
 
 
 def _detect_section_mm2(text: str) -> str | None:
-    """Extrait la section conducteur depuis la designation (ex. '5G6', '1X240', '4X95+T50')."""
+    """Extrait la section conducteur depuis la designation."""
     m = _RE_SECTION_MM2.search(text)
     if m:
-        # Normalise en supprimant les espaces internes
         return re.sub(r"\s+", "", m.group(1)).upper()
     return None
 
 
 def _detect_cable_type(text: str) -> str | None:
-    """Extrait le type de cable depuis la designation (ex. 'U1000AR2V', 'CR1')."""
+    """Extrait le type de cable depuis la designation."""
     m = _RE_CABLE_TYPE.search(text)
     if m:
         return re.sub(r"\s+", "", m.group(1)).upper()
@@ -131,9 +228,7 @@ def _detect_cable_type(text: str) -> str | None:
 def _section_code_from_num_prix(num_prix: str) -> str | None:
     """Extrait le code section depuis un num_prix (ex. '505.3' → '505')."""
     parts = num_prix.split(".")
-    if parts:
-        return parts[0].strip()
-    return None
+    return parts[0].strip() if parts else None
 
 
 def _kind_from_section_code(code: str) -> str:
@@ -148,7 +243,7 @@ def _enrich_line(line: BordereauLine, section_code: str | None, sous_famille: st
 
     line.detected_kind = _kind_from_section_code(section_code) if section_code else "autre"
 
-    if section_code == "505":
+    if line.detected_kind == "cable":
         line.detected_section_mm2 = _detect_section_mm2(context)
         line.detected_cable_type = _detect_cable_type(context)
         line.detected_material = _detect_material(context)
@@ -159,7 +254,7 @@ def _enrich_line(line: BordereauLine, section_code: str | None, sous_famille: st
 
 
 # ---------------------------------------------------------------------------
-# Point d'entree public
+# Resultat du parsing
 # ---------------------------------------------------------------------------
 
 
@@ -172,29 +267,40 @@ class ParseResult:
         self.total_lines: int = 0
         self.total_articles: int = 0
         self.sections_count: int = 0
+        self.sheet_name_used: str = ""
 
 
-def parse_bordereau_file(file_path: Path, import_id: str) -> ParseResult:
+# ---------------------------------------------------------------------------
+# Point d'entree public
+# ---------------------------------------------------------------------------
+
+
+def parse_bordereau_file(
+    file_path: Path,
+    import_id: str,
+    sheet_name: str | None = None,
+) -> ParseResult:
     """Parse le fichier bordereau et retourne les sections et lignes extraites.
 
     Args:
         file_path: Chemin absolu vers le fichier xlsx.
         import_id: ID de l'import BordereauImport cible.
+        sheet_name: Nom de la feuille a parser (None = auto-detection).
 
     Returns:
         ParseResult contenant les objets SQLAlchemy a persister.
 
     Raises:
-        ValueError: Si la feuille CFO est absente ou le format invalide.
-        Exception: Sur tout autre probleme de lecture.
+        ValueError: Si la feuille est absente ou le format invalide.
     """
-    logger.info(f"Parsing bordereau : {file_path}")
+    logger.info(f"Parsing bordereau : {file_path} (feuille : {sheet_name or 'auto'})")
 
     wb = openpyxl.load_workbook(str(file_path), data_only=True, read_only=True)
-    ws = _find_cfo_sheet(wb)
+    ws = _find_sheet(wb, sheet_name)
     header_row = _find_header_row(ws)
 
     result = ParseResult()
+    result.sheet_name_used = ws.title  # type: ignore[assignment]
 
     current_section: BordereauSection | None = None
     current_sous_famille: str | None = None
@@ -215,43 +321,31 @@ def parse_bordereau_file(file_path: Path, import_id: str) -> ParseResult:
         if not col_a and not col_b:
             continue
 
+        # --- Detection du type de ligne ---
+
         # Section principale : "500-ELECTRICITE COURANT FORT"
         if col_a and _RE_SECTION_MAIN.match(col_a):
             dash_pos = col_a.index("-")
             code = col_a[:dash_pos].strip()
-            title = col_a[dash_pos + 1 :].strip()
-            section = BordereauSection(
-                id=str(uuid.uuid4()),
-                bordereau_import_id=import_id,
-                code=code,
-                title=title,
-                excel_row_number=excel_row_num,
-                order_index=section_order,
-            )
+            title = col_a[dash_pos + 1:].strip()
+            section = _make_section(import_id, code, title, excel_row_num, section_order)
             result.sections.append(section)
             current_section = section
             current_sous_famille = None
             section_order += 1
             continue
 
-        # Sous-section : col A = "505" (3 chiffres seuls)
+        # Sous-section : col A = "505" (2-4 chiffres seuls)
         if col_a and _RE_SECTION_SUB.match(col_a):
             title = col_b.strip() if col_b else None
-            section = BordereauSection(
-                id=str(uuid.uuid4()),
-                bordereau_import_id=import_id,
-                code=col_a.strip(),
-                title=title,
-                excel_row_number=excel_row_num,
-                order_index=section_order,
-            )
+            section = _make_section(import_id, col_a.strip(), title, excel_row_num, section_order)
             result.sections.append(section)
             current_section = section
             current_sous_famille = None
             section_order += 1
             continue
 
-        # Article : col A = "505.3"
+        # Article : col A = "505.3" ou "1.1" ou "5001.2"
         if col_a and _RE_ARTICLE.match(col_a):
             num_prix = col_a.strip()
             designation = col_b.strip() if col_b else None
@@ -284,26 +378,59 @@ def parse_bordereau_file(file_path: Path, import_id: str) -> ParseResult:
             result.total_articles += 1
             continue
 
-        # Sous-famille : col A vide, col B contient un titre intermédiaire
+        # Sous-famille ou section implicite : col A vide, col B contient un titre
         if not col_a and col_b:
-            current_sous_famille = col_b.strip()
+            text = col_b.strip()
+            if _is_all_caps_title(text):
+                # Titre en majuscules sans code → creer une section implicite
+                auto_code = str(section_order).zfill(3)
+                section = _make_section(import_id, auto_code, text, excel_row_num, section_order)
+                result.sections.append(section)
+                current_section = section
+                current_sous_famille = None
+                section_order += 1
+            else:
+                # Titre mixte → sous-famille
+                current_sous_famille = text
             continue
 
     wb.close()
 
+    # Fallback : si aucune section n'a ete detectee, creer une section "General"
+    if not result.sections and result.lines:
+        fallback_section = _make_section(import_id, "000", "General", None, 0)
+        result.sections.append(fallback_section)
+        for line in result.lines:
+            line.section_id = fallback_section.id
+
     result.sections_count = len(result.sections)
     logger.info(
         f"Parsing termine : {result.total_lines} lignes lues, "
-        f"{result.total_articles} articles, {result.sections_count} sections"
+        f"{result.total_articles} articles, {result.sections_count} sections "
+        f"(feuille : {result.sheet_name_used})"
     )
     return result
 
 
-def detect_indice_from_filename(filename: str) -> str | None:
-    """Detecte l'indice de revision depuis le nom de fichier.
+def _make_section(
+    import_id: str,
+    code: str,
+    title: str | None,
+    excel_row: int | None,
+    order: int,
+) -> BordereauSection:
+    return BordereauSection(
+        id=str(uuid.uuid4()),
+        bordereau_import_id=import_id,
+        code=code,
+        title=title,
+        excel_row_number=excel_row,
+        order_index=order,
+    )
 
-    Exemples : 'Bordereau_IndiceB.xlsx' → 'B', 'BDP_V2_DACHSER.xlsx' → None
-    """
+
+def detect_indice_from_filename(filename: str) -> str | None:
+    """Detecte l'indice de revision depuis le nom de fichier."""
     upper = filename.upper()
     m = re.search(r"INDICE[_\s]+([A-Z][0-9]*)", upper)
     if m:
