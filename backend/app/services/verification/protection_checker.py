@@ -14,6 +14,20 @@ from app.services.verification.gap_emitter import BLOQUANT, GapEmitter
 # Courant de court-circuit presume par defaut si non disponible (kA)
 _DEFAULT_ICC_KA = 6.0
 
+# Styles CANECO a ignorer (tableaux, jeux de barres, reserves, etc.)
+_TABLEAU_STYLES = {
+    "tableau", "td", "tgbt", "tgt", "tds", "armoire", "coffret",
+    "distribution", "bus", "jeu de barres", "jdb",
+    "reserve", "réserve", "parafoudre", "paraf",
+}
+
+
+def _is_tableau_style(style: str | None) -> bool:
+    if not style:
+        return False
+    sl = style.strip().lower()
+    return any(k in sl for k in _TABLEAU_STYLES)
+
 
 class ProtectionChecker:
     """Verifie les protections CANECO : calibrage, reglage et pouvoir de coupure."""
@@ -25,6 +39,8 @@ class ProtectionChecker:
     def run(self, caneco_lines: list[CanecoLine]) -> None:
         """Parcourt les lignes CANECO et detecte les non-conformites de protection."""
         for cl in caneco_lines:
+            if _is_tableau_style(cl.style):
+                continue
             self._check_ib_vs_calibre(cl)
             self._check_icu(cl)
 
@@ -33,7 +49,7 @@ class ProtectionChecker:
     def _check_ib_vs_calibre(self, cl: CanecoLine) -> None:
         ib = cl.ib
         calibre = cl.calibre
-        if ib is None or calibre is None or calibre <= 0:
+        if ib is None or ib <= 0 or calibre is None or calibre <= 0:
             return
 
         repere = cl.repere or "—"

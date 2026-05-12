@@ -19,6 +19,7 @@ from app.models.bordereau import BordereauLine
 from app.models.caneco import CanecoLine
 from app.services.verification.cable_comparator import CableComparator
 from app.services.verification.cable_utils import (
+    classify_tripping_curve,
     min_pe_section,
     normalize_material,
     parse_bordereau_section,
@@ -111,6 +112,12 @@ def make_bordereau(
         ("6", 6.0),
         (None, None),
         ("inconnu", None),
+        # Multi-cable unipolaire (grandes sections DACHSER)
+        ("3X(1x35)", 35.0),
+        ("4X(1x300)", 300.0),
+        ("2X3(1x240)", 240.0),
+        ("4X3(1x300)", 300.0),
+        ("3X(1x150)+T70", 150.0),
     ],
 )
 def test_parse_caneco_cable(cable: str | None, expected: float | None) -> None:
@@ -316,3 +323,60 @@ def test_suggestion_long_cable() -> None:
     engine.run([cl])
     titles = [g.title for g in emitter.gaps]
     assert any("longueur" in t.lower() for t in titles)
+
+
+# ---------------------------------------------------------------------------
+# classify_tripping_curve
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "ir_mg_in,expected_curve",
+    [
+        (4.0, "B"),    # milieu plage B
+        (5.0, "B"),    # borne basse C = borne haute B → attribuee a B
+        (7.5, "C"),    # milieu plage C
+        (10.0, "C"),   # borne haute C
+        (15.0, "D"),   # milieu plage D
+        (2.0, "B"),    # sous la plage B → approche borne la plus proche
+        (None, None),  # valeur absente
+        (0.0, None),   # zero invalide
+        (96.0, None),  # DACHSER : valeur anormalement haute → pas de courbe
+        (25.0, None),  # au-dela de la plage valide
+    ],
+)
+def test_classify_tripping_curve(ir_mg_in: float | None, expected_curve: str | None) -> None:
+    assert classify_tripping_curve(ir_mg_in) == expected_curve
+
+
+# ---------------------------------------------------------------------------
+# ProtectionChecker — cas limites
+# ---------------------------------------------------------------------------
+
+
+def test_protection_ib_zero_no_gap() -> None:
+    """IB=0 ne doit pas generer d'ecart (circuit non charge ou jeu de barres)."""
+    emitter = GapEmitter()
+    cl = make_caneco(ib=0.0, calibre=10.0, icu=10.0)
+    checker = ProtectionChecker(emitter, icc_presumed_ka=6.0)
+    checker.run([cl])
+    assert len(emitter.gaps) == 0
+
+
+def test_protection_skips_tableau_style() -> None:
+    """Les lignes de style 'Tableau' ne doivent pas etre verifiees."""
+    emitter = GapEmitter()
+    # IB > calibre, mais style Tableau → pas d'ecart
+    cl = make_caneco(style="TGBT", ib=500.0, calibre=10.0, icu=10.0)
+    checker = ProtectionChecker(emitter, icc_presumed_ka=6.0)
+    checker.run([cl])
+    assert len(emitter.gaps) == 0
+
+
+def test_protection_skips_reserve_style() -> None:
+    """Les lignes de style 'Reserve' ne doivent pas etre verifiees."""
+    emitter = GapEmitter()
+    cl = make_caneco(style="Reserve", ib=0.0, calibre=10.0, icu=10.0)
+    checker = ProtectionChecker(emitter, icc_presumed_ka=6.0)
+    checker.run([cl])
+    assert len(emitter.gaps) == 0

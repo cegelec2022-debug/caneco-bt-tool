@@ -20,15 +20,16 @@ from app.services.verification.cable_utils import (
     parse_bordereau_section,
     parse_caneco_cable,
 )
-from app.services.verification.gap_emitter import A_CORRIGER, A_SIGNALER, GapEmitter
+from app.services.verification.gap_emitter import A_CORRIGER, A_SIGNALER, INFO, GapEmitter
 
 # Regex extrayant un repere entre parentheses depuis la designation bordereau
 _RE_REPERE = re.compile(r"\(([A-Z0-9_\-]{2,30})\)", re.IGNORECASE)
 
-# Styles CANECO qui correspondent a un tableau (jeu de barres, TGBT, TD, etc.)
+# Styles CANECO qui correspondent a un tableau ou a une ligne hors-circuit
 _TABLEAU_STYLES = {
     "tableau", "td", "tgbt", "tgt", "tds", "armoire", "coffret",
     "distribution", "bus", "jeu de barres", "jdb",
+    "reserve", "réserve", "parafoudre", "paraf",
 }
 
 
@@ -134,22 +135,42 @@ class LineMatcher:
             if bd_match is None:
                 report.unmatched_caneco.append(cl)
                 repere = cl.repere or "—"
-                self._emitter.emit(
-                    code="E-001",
-                    title="Circuit CANECO absent du bordereau",
-                    severity=A_SIGNALER,
-                    description=(
-                        f"Le circuit '{repere}' (section {sec} mm², {mat}) est dans CANECO "
-                        f"mais n'a pas d'article cable correspondant dans le bordereau."
-                    ),
-                    caneco_line_id=cl.id,
-                    caneco_repere=cl.repere,
-                    fields_compared={"section_mm2": sec, "materiau": mat},
-                    suggested_action=(
-                        "Verifier si un article de section equivalente existe "
-                        "sous une autre designation dans le bordereau."
-                    ),
-                )
+                if sec is None:
+                    # Section non parsable : signaler sans bloquer (format inconnu ou ligne vide)
+                    self._emitter.emit(
+                        code="E-001",
+                        title="Circuit CANECO absent du bordereau (section non identifiee)",
+                        severity=INFO,
+                        description=(
+                            f"Le circuit '{repere}' (designation cable : '{cl.cable or '—'}') "
+                            f"n'a pas pu etre rapproche du bordereau car la section n'a pas ete "
+                            f"reconnue dans la designation."
+                        ),
+                        caneco_line_id=cl.id,
+                        caneco_repere=cl.repere,
+                        fields_compared={"cable_brut": cl.cable, "materiau": mat},
+                        suggested_action=(
+                            "Verifier manuellement si un article bordereau correspond "
+                            f"a ce circuit (designation cable : '{cl.cable or '—'}')."
+                        ),
+                    )
+                else:
+                    self._emitter.emit(
+                        code="E-001",
+                        title="Circuit CANECO absent du bordereau",
+                        severity=A_SIGNALER,
+                        description=(
+                            f"Le circuit '{repere}' (section {sec} mm², {mat}) est dans CANECO "
+                            f"mais n'a pas d'article cable correspondant dans le bordereau."
+                        ),
+                        caneco_line_id=cl.id,
+                        caneco_repere=cl.repere,
+                        fields_compared={"section_mm2": sec, "materiau": mat},
+                        suggested_action=(
+                            "Verifier si un article de section equivalente existe "
+                            "sous une autre designation dans le bordereau."
+                        ),
+                    )
 
         # --- Articles bordereau sans equivalent CANECO ---
         for bl in bd_cables + bd_tableaux:
