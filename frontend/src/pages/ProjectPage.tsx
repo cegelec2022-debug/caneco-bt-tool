@@ -2311,20 +2311,51 @@ function confidenceBadge(c: number) {
   return "bg-gray-100 text-gray-600 border-gray-200";
 }
 
+const RULE_CANECO_MAP: Record<string, string> = {
+  section_minimale:        "Section",
+  section_neutre:          "Section N",
+  section_pe:              "Section PE",
+  chute_tension_max:       "DeltaU",
+  type_cable_requis:       "TypeCable",
+  tension_isolement:       "TypeCable",
+  ddr_sensibilite:         "DDR",
+  ddr_type:                "DDR",
+  courbe_disjoncteur:      "Courbe",
+  pouvoir_coupure:         "Pdc",
+  calibre_protection:      "Calibre",
+  indice_protection:       "IP",
+  indice_choc:             "IK",
+  tension_nominale:        "Un",
+  courant_court_circuit:   "Icc",
+  schema_mise_terre:       "Schema",
+  selectivite:             "Selectivite",
+  mode_pose_cable:         "ModePose",
+};
+
 function CpsRuleRow({ rule, onShowExcerpt }: { rule: CpsRule; onShowExcerpt: (r: CpsRule) => void }) {
+  const canecoCol = RULE_CANECO_MAP[rule.rule_type];
   return (
     <tr className="hover:bg-bg-cell transition-colors">
       <td className="px-3 py-2 text-xs text-text-secondary whitespace-nowrap">
-        {ruleTypeLabel(rule.rule_type)}
-        {rule.context_label && (
-          <span className="ml-1 text-text-tertiary">({rule.context_label})</span>
-        )}
+        <div className="flex flex-col gap-0.5">
+          <span>{ruleTypeLabel(rule.rule_type)}</span>
+          <div className="flex items-center gap-1 flex-wrap">
+            {rule.context_label && (
+              <span className="text-text-tertiary text-[10px]">({rule.context_label})</span>
+            )}
+            {canecoCol && (
+              <span className="px-1 py-px text-[9px] font-semibold bg-vinci-blue/10 text-vinci-blue border border-vinci-blue/20 rounded leading-none">
+                CANECO:{canecoCol}
+              </span>
+            )}
+          </div>
+        </div>
       </td>
-      <td className="px-3 py-2 font-mono text-sm font-medium text-text-primary">
+      <td className="px-3 py-2 font-mono text-sm font-semibold text-text-primary whitespace-nowrap">
         {rule.value}
-        {rule.unit && <span className="ml-1 text-text-secondary text-xs">{rule.unit}</span>}
+        {rule.unit && <span className="ml-1 text-text-secondary text-xs font-normal">{rule.unit}</span>}
       </td>
-      <td className="px-3 py-2 text-xs text-text-secondary max-w-xs truncate">
+      <td className="px-3 py-2 text-xs text-text-secondary max-w-xs">
         {rule.description}
       </td>
       <td className="px-3 py-2 text-xs text-center text-text-tertiary">{rule.source_page}</td>
@@ -2337,7 +2368,7 @@ function CpsRuleRow({ rule, onShowExcerpt }: { rule: CpsRule; onShowExcerpt: (r:
         {rule.source_excerpt ? (
           <button
             onClick={() => onShowExcerpt(rule)}
-            className="text-xs text-vinci-blue hover:underline"
+            className="text-xs text-vinci-blue hover:underline whitespace-nowrap"
           >
             Voir extrait
           </button>
@@ -2560,10 +2591,15 @@ function CpsTab({ projectId }: { projectId: string }) {
                         colSpan={6}
                         className="px-3 py-1.5 text-xs font-semibold text-text-secondary uppercase tracking-wide"
                       >
-                        {ruleTypeLabel(ruleType)}
+                        <span>{ruleTypeLabel(ruleType)}</span>
                         <span className="ml-2 font-normal text-text-tertiary">
                           ({typeRules.length})
                         </span>
+                        {RULE_CANECO_MAP[ruleType] && (
+                          <span className="ml-2 px-1.5 py-px text-[9px] font-semibold bg-vinci-blue/10 text-vinci-blue border border-vinci-blue/20 rounded leading-none align-middle">
+                            vs CANECO
+                          </span>
+                        )}
                       </td>
                     </tr>
                     {typeRules.map((rule, i) => (
