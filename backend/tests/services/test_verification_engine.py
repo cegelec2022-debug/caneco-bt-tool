@@ -27,7 +27,11 @@ from app.services.verification.cable_utils import (
     parse_caneco_conductors,
 )
 from app.services.verification.gap_emitter import BLOQUANT, A_CORRIGER, GapEmitter
-from app.services.verification.line_matcher import LineMatcher, _extract_parent_tableau
+from app.services.verification.line_matcher import (
+    LineMatcher,
+    _extract_parent_tableau,
+    _parse_simple_section,
+)
 from app.services.verification.norm_checker import NormChecker
 from app.services.verification.protection_checker import (
     ProtectionChecker,
@@ -258,13 +262,26 @@ def test_protection_ib_gt_calibre() -> None:
     assert "E-004" in codes
 
 
-def test_protection_icu_insufficient() -> None:
+def test_protection_icu_null_emits_e019() -> None:
+    """v1.3 : Icu=0 ou None emet E-019 (donnee manquante CANECO), plus de E-011."""
     emitter = GapEmitter()
-    cl = make_caneco(ib=8.0, calibre=10.0, icu=3.0)
+    cl = make_caneco(ib=8.0, calibre=10.0, icu=0.0)
     checker = ProtectionChecker(emitter, icc_presumed_ka=6.0)
     checker.run([cl])
     codes = [g.code for g in emitter.gaps]
-    assert "E-011" in codes
+    assert "E-019" in codes
+    # E-011 supprime : on ne compare plus Icc et Icu
+    assert "E-011" not in codes
+
+
+def test_protection_icu_valid_no_gap() -> None:
+    """Icu correctement renseigne (meme faible) ne genere pas E-019."""
+    emitter = GapEmitter()
+    cl = make_caneco(ib=8.0, calibre=10.0, icu=4.5)
+    checker = ProtectionChecker(emitter, icc_presumed_ka=6.0)
+    checker.run([cl])
+    icu_gaps = [g for g in emitter.gaps if g.code in ("E-011", "E-019") and "Icu" in g.title]
+    assert icu_gaps == []
 
 
 def test_protection_ok_no_gaps() -> None:
@@ -358,13 +375,17 @@ def test_classify_tripping_curve(ir_mg_in: float | None, expected_curve: str | N
 # ---------------------------------------------------------------------------
 
 
-def test_protection_ib_zero_no_gap() -> None:
-    """IB=0 ne doit pas generer d'ecart (circuit non charge ou jeu de barres)."""
+def test_protection_ib_zero_emits_e019() -> None:
+    """v1.3 : IB=0 sur un circuit hors-tableau emet E-019 (oubli de calcul CANECO)."""
     emitter = GapEmitter()
     cl = make_caneco(ib=0.0, calibre=10.0, icu=10.0)
     checker = ProtectionChecker(emitter, icc_presumed_ka=6.0)
     checker.run([cl])
-    assert len(emitter.gaps) == 0
+    codes = [g.code for g in emitter.gaps]
+    assert "E-019" in codes
+    # Pas de E-004 IB>In (ib=0 ne depasse pas calibre)
+    e004 = [g for g in emitter.gaps if g.code == "E-004"]
+    assert e004 == []
 
 
 def test_protection_skips_tableau_style() -> None:
@@ -435,22 +456,14 @@ def test_compute_depth_map_orphan_returns_zero() -> None:
     assert depth[cl.id] == 0
 
 
-def test_protection_icc_degressif() -> None:
-    """Icu=4.5 OK en profondeur 3 (Icc local 6 * 0.6^3 = 1.30 kA) mais KO en profondeur 0."""
+def test_protection_no_more_e011_with_valid_icu() -> None:
+    """v1.3 : Icu valide ne genere plus E-011, peu importe la profondeur (Icc non compare)."""
     emitter = GapEmitter()
     cl = make_caneco(repere="DEEP", style="Eclairage", ib=8.0, calibre=10.0, icu=4.5)
-    # Profondeur 3 : Icc_local = 6.0 × 0.6^3 ≈ 1.30 → Icu 4.5 > 1.30 → pas d'ecart E-011
-    checker = ProtectionChecker(emitter, icc_presumed_ka=6.0, depth_map={cl.id: 3})
+    checker = ProtectionChecker(emitter, icc_presumed_ka=25.0, depth_map={cl.id: 0})
     checker.run([cl])
     e011 = [g for g in emitter.gaps if g.code == "E-011"]
     assert e011 == []
-
-    # En profondeur 0 : Icc_local = 6.0 → Icu 4.5 < 6.0 → ecart E-011
-    emitter2 = GapEmitter()
-    checker2 = ProtectionChecker(emitter2, icc_presumed_ka=6.0, depth_map={cl.id: 0})
-    checker2.run([cl])
-    e011_2 = [g for g in emitter2.gaps if g.code == "E-011"]
-    assert len(e011_2) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -504,3 +517,55 @@ def test_norm_checker_nfc013_matches_real_douche() -> None:
     checker.run([cl])
     nfc013 = [g for g in emitter.gaps if g.norm_rule_code == "NFC-013"]
     assert len(nfc013) >= 1
+
+
+# ---------------------------------------------------------------------------
+# I — _parse_simple_section et couverture des sections phase/neutre/PE
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("1x70", 70.0),
+        ("1x150", 150.0),
+        ("70", 70.0),
+        ("2.5", 2.5),
+        ("G16", 16.0),
+        ("gG70", 70.0),
+        (None, None),
+        ("", None),
+        ("inconnu", None),
+    ],
+)
+def test_parse_simple_section(raw: str | None, expected: float | None) -> None:
+    assert _parse_simple_section(raw) == expected
+
+
+# ---------------------------------------------------------------------------
+# G — caneco_amont propage dans les gaps
+# ---------------------------------------------------------------------------
+
+
+def test_gap_includes_caneco_amont() -> None:
+    """Tout gap emis doit porter l'amont (tableau d'origine) pour l'identification."""
+    emitter = GapEmitter()
+    cl = make_caneco(repere="1E/TGBT", amont="TGBT", ib=20.0, calibre=16.0, icu=10.0)
+    checker = ProtectionChecker(emitter, icc_presumed_ka=6.0)
+    checker.run([cl])
+    e004 = [g for g in emitter.gaps if g.code == "E-004"]
+    assert len(e004) >= 1
+    # Tous les gaps doivent porter l'amont
+    for g in e004:
+        assert g.caneco_amont == "TGBT", f"Gap '{g.title}' missing amont"
+
+
+def test_e019_missing_icu_includes_amont() -> None:
+    """E-019 sur Icu nul propage egalement l'amont."""
+    emitter = GapEmitter()
+    cl = make_caneco(repere="6E/TGBT", amont="TGBT", ib=5.0, calibre=10.0, icu=0.0)
+    checker = ProtectionChecker(emitter, icc_presumed_ka=6.0)
+    checker.run([cl])
+    e019 = [g for g in emitter.gaps if g.code == "E-019" and "Icu" in g.title]
+    assert len(e019) == 1
+    assert e019[0].caneco_amont == "TGBT"

@@ -14,7 +14,7 @@ ce qui supprime les faux positifs E-011 sur les disjoncteurs divisionnaires.
 from __future__ import annotations
 
 from app.models.caneco import CanecoLine
-from app.services.verification.gap_emitter import BLOQUANT, GapEmitter
+from app.services.verification.gap_emitter import A_CORRIGER, A_SIGNALER, BLOQUANT, GapEmitter
 
 # Courant de court-circuit presume par defaut a l'origine (kA)
 _DEFAULT_ICC_KA = 6.0
@@ -107,8 +107,45 @@ class ProtectionChecker:
         for cl in caneco_lines:
             if _is_tableau_style(cl.style):
                 continue
+            self._check_missing_data(cl)
             self._check_ib_vs_calibre(cl)
             self._check_icu(cl)
+
+    # ------------------------------------------------------------------
+
+    def _check_missing_data(self, cl: CanecoLine) -> None:
+        """Signale les champs de protection nuls ou absents (oublis de calcul CANECO).
+
+        Vise les departs ou la selection automatique n'a pas ete jouee : calibre, IB,
+        ou regimes IrTh/IrMg manquants. Emet un E-019 par champ manquant.
+        """
+        repere = cl.repere or "—"
+        missing: list[tuple[str, object]] = []
+        if cl.calibre is None or cl.calibre == 0:
+            missing.append(("calibre In", cl.calibre))
+        if cl.ib is None or cl.ib == 0:
+            missing.append(("courant d'emploi IB", cl.ib))
+
+        for field_label, value in missing:
+            self._emitter.emit(
+                code="E-019",
+                title=f"{field_label} manquant ou nul — depart non calcule dans CANECO",
+                severity=A_SIGNALER,
+                description=(
+                    f"Circuit '{repere}' : {field_label} = "
+                    f"{value if value is not None else 'non renseigne'}. "
+                    f"Ce champ doit etre renseigne pour valider la coherence de la protection."
+                ),
+                caneco_line_id=cl.id,
+                caneco_repere=cl.repere,
+                caneco_amont=cl.amont,
+                fields_compared={"champ_manquant": field_label, "valeur": value},
+                suggested_action=(
+                    "Verifier dans CANECO que le bilan de puissance et la selection du "
+                    "disjoncteur ont bien ete executes pour ce depart."
+                ),
+                norm_rule_code="DATA-PROT",
+            )
 
     # ------------------------------------------------------------------
 
@@ -132,6 +169,7 @@ class ProtectionChecker:
                 ),
                 caneco_line_id=cl.id,
                 caneco_repere=cl.repere,
+                caneco_amont=cl.amont,
                 fields_compared={"IB_A": ib, "In_A": calibre},
                 suggested_action=(
                     f"Augmenter le calibre In a au moins {_next_standard_calibre(ib):.0f} A "
@@ -156,6 +194,7 @@ class ProtectionChecker:
                     ),
                     caneco_line_id=cl.id,
                     caneco_repere=cl.repere,
+                    caneco_amont=cl.amont,
                     fields_compared={
                         "IrTh_ratio": cl.ir_th_in,
                         "IrTh_abs_A": round(ir_th_abs, 2),
@@ -170,41 +209,39 @@ class ProtectionChecker:
                 )
 
     def _check_icu(self, cl: CanecoLine) -> None:
+        """Verifie que Icu est renseigne dans CANECO.
+
+        CORRECTION v1.3 : suppression de la comparaison Icu vs Icc presume.
+        Chaque tableau a son propre Icc reel, non disponible dans l'export, donc la
+        comparaison globale produit des faux positifs. A la place, on signale les Icu
+        nuls ou non renseignes — symptome d'un departe non calcule dans CANECO.
+        """
         icu = cl.icu
-        if icu is None:
-            return
-
         repere = cl.repere or "—"
-        icc_local = self._icc_at(cl)
-        depth = self._depth_map.get(cl.id, 0)
 
-        if icu < icc_local:
+        if icu is None or icu <= 0:
             self._emitter.emit(
-                code="E-011",
-                title="Pouvoir de coupure Icu insuffisant vs Icc presume",
-                severity=BLOQUANT,
+                code="E-019",
+                title="Icu manquant ou nul — depart non calcule dans CANECO",
+                severity=A_CORRIGER,
                 description=(
-                    f"Circuit '{repere}' (profondeur {depth} dans l'arborescence) : "
-                    f"Icu = {icu:.1f} kA inferieur au Icc estime a ce niveau "
-                    f"= {icc_local:.1f} kA (Icc origine {self._icc_origin:.1f} kA, "
-                    f"facteur {self._decay} par etage). "
-                    f"En cas de court-circuit, le disjoncteur risque d'exploser."
+                    f"Circuit '{repere}' : Icu = {icu if icu is not None else 'non renseigne'}. "
+                    f"Un Icu nul ou absent indique generalement que le disjoncteur n'a pas ete "
+                    f"calcule dans CANECO (selection automatique non effectuee ou departe en "
+                    f"reserve)."
                 ),
                 caneco_line_id=cl.id,
                 caneco_repere=cl.repere,
+                caneco_amont=cl.amont,
                 fields_compared={
                     "Icu_kA": icu,
-                    "Icc_local_kA": round(icc_local, 2),
-                    "Icc_origine_kA": self._icc_origin,
-                    "profondeur": depth,
-                    "facteur_decroissance": self._decay,
+                    "champ_manquant": "Icu",
                 },
                 suggested_action=(
-                    f"Remplacer par un disjoncteur dont le Icu est "
-                    f"superieur ou egal a {icc_local:.1f} kA, ou ajuster le Icc d'origine "
-                    f"si la valeur saisie est trop conservative."
+                    "Ouvrir CANECO, lancer le calcul de selection du disjoncteur pour ce depart, "
+                    "ou retirer la ligne si c'est une reserve non equipee."
                 ),
-                norm_rule_code="NFC-011",
+                norm_rule_code="DATA-Icu",
             )
 
 

@@ -86,6 +86,7 @@ class SuggestionEngine:
                     ),
                     caneco_line_id=cl.id,
                     caneco_repere=cl.repere,
+                    caneco_amont=cl.amont,
                     fields_compared={
                         "section_mm2": sec,
                         "min_normative_mm2": min_sec,
@@ -116,6 +117,7 @@ class SuggestionEngine:
                     ),
                     caneco_line_id=cl.id,
                     caneco_repere=cl.repere,
+                    caneco_amont=cl.amont,
                     fields_compared={
                         "calibre_A": cl.calibre,
                         "IB_A": cl.ib,
@@ -144,6 +146,7 @@ class SuggestionEngine:
                     ),
                     caneco_line_id=cl.id,
                     caneco_repere=cl.repere,
+                    caneco_amont=cl.amont,
                     fields_compared={
                         "longueur_m": cl.longueur,
                         "longueur_majoree_m": round(cl.longueur * (1 + margin / 100), 1),
@@ -171,6 +174,7 @@ class SuggestionEngine:
                     ),
                     caneco_line_id=cl.id,
                     caneco_repere=cl.repere,
+                    caneco_amont=cl.amont,
                     norm_rule_code=rule["id"],
                     suggested_action=(
                         "Utiliser des bornes bimetalliques ou specifiques aluminium. "
@@ -192,6 +196,7 @@ class SuggestionEngine:
                     ),
                     caneco_line_id=cl.id,
                     caneco_repere=cl.repere,
+                    caneco_amont=cl.amont,
                     norm_rule_code=rule["id"],
                     suggested_action=(
                         "Verifier si ce circuit est couvert par une DDR de tete "
@@ -240,6 +245,7 @@ class SuggestionEngine:
                     ),
                     caneco_line_id=cl.id,
                     caneco_repere=cl.repere,
+                    caneco_amont=cl.amont,
                     fields_compared={
                         "courbe_actuelle": current,
                         "courbe_recommandee": preferred,
@@ -274,6 +280,7 @@ class SuggestionEngine:
                     ),
                     caneco_line_id=cl.id,
                     caneco_repere=cl.repere,
+                    caneco_amont=cl.amont,
                     norm_rule_code=rule["id"],
                     suggested_action=(
                         f"Pour les charges lineaires equilibrees, le neutre peut etre "

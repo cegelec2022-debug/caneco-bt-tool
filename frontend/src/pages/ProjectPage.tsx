@@ -2793,7 +2793,7 @@ const GAP_CODE_LABELS: Record<string, string> = {
   "E-016": "Conducteur alu < 16 mm²",
   "E-017": "Type DDR inadapte",
   "E-018": "Courbe declenchement inadaptee",
-  "E-019": "Cable CPS absent bordereau",
+  "E-019": "Donnee CANECO manquante (Icu/IB/calibre = 0)",
   "E-020": "Regle CPS non respectee",
 };
 
@@ -2946,6 +2946,12 @@ function GapDetailPanel({
                 <div className="font-mono font-medium">{gap.caneco_repere}</div>
               </div>
             )}
+            {gap.caneco_amont && (
+              <div>
+                <div className="text-text-tertiary mb-0.5">Amont (tableau)</div>
+                <div className="font-mono font-medium">{gap.caneco_amont}</div>
+              </div>
+            )}
             {gap.bordereau_num_prix && (
               <div>
                 <div className="text-text-tertiary mb-0.5">N° Prix bordereau</div>
@@ -2964,12 +2970,31 @@ function GapDetailPanel({
             <div>
               <div className="text-xs font-medium text-text-tertiary uppercase tracking-wide mb-1">Champs compares</div>
               <div className="bg-bg-cell rounded p-2 space-y-1">
-                {Object.entries(gap.fields_compared).map(([k, v]) => (
-                  <div key={k} className="flex items-center justify-between text-xs">
-                    <span className="text-text-secondary font-mono">{k}</span>
-                    <span className="font-medium text-text-primary">{String(v)}</span>
-                  </div>
-                ))}
+                {Object.entries(gap.fields_compared).map(([k, v]) => {
+                  // Affichage monospace pour les valeurs brutes CANECO/bordereau
+                  // (5G6, 4X(1x300), 1x150, etc.) plus lisible que la simple coercition
+                  const isRaw =
+                    k.includes("brut") || k.includes("cable") || k.includes("section_bordereau");
+                  const display =
+                    v === null || v === undefined
+                      ? "—"
+                      : Array.isArray(v)
+                      ? v.join(", ")
+                      : String(v);
+                  return (
+                    <div key={k} className="flex items-center justify-between gap-3 text-xs">
+                      <span className="text-text-secondary font-mono">{k}</span>
+                      <span
+                        className={cn(
+                          "font-medium text-text-primary text-right break-all",
+                          isRaw && "font-mono bg-white px-1.5 py-0.5 rounded border border-border-std"
+                        )}
+                      >
+                        {display}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -3114,12 +3139,25 @@ function VerificationsTab({ projectId }: { projectId: string }) {
   // KPI du run selectionne
   const kpis = runDetail
     ? [
-        { label: "Bloquants", count: runDetail.critical_count ?? 0, color: "text-red-700", bg: "bg-red-50 border-red-200" },
-        { label: "A corriger", count: runDetail.high_count ?? 0, color: "text-orange-700", bg: "bg-orange-50 border-orange-200" },
-        { label: "A signaler", count: runDetail.medium_count ?? 0, color: "text-yellow-700", bg: "bg-yellow-50 border-yellow-200" },
-        { label: "Info", count: runDetail.info_count ?? 0, color: "text-blue-700", bg: "bg-blue-50 border-blue-200" },
+        { label: "Bloquants", severity: "BLOQUANT" as const, count: runDetail.critical_count ?? 0, color: "text-red-700", bg: "bg-red-50 border-red-200", ring: "ring-red-400" },
+        { label: "A corriger", severity: "A_CORRIGER" as const, count: runDetail.high_count ?? 0, color: "text-orange-700", bg: "bg-orange-50 border-orange-200", ring: "ring-orange-400" },
+        { label: "A signaler", severity: "A_SIGNALER" as const, count: runDetail.medium_count ?? 0, color: "text-yellow-700", bg: "bg-yellow-50 border-yellow-200", ring: "ring-yellow-400" },
+        { label: "Info", severity: "INFO" as const, count: runDetail.info_count ?? 0, color: "text-blue-700", bg: "bg-blue-50 border-blue-200", ring: "ring-blue-400" },
       ]
     : [];
+
+  // Toggle filter via clic sur une KPI : applique la severite ou retire le filtre si deja actif.
+  // Desactive la "Vue ingenieur" pour respecter le choix utilisateur (sinon Info/A signaler restent masques).
+  function toggleKpiFilter(severity: "BLOQUANT" | "A_CORRIGER" | "A_SIGNALER" | "INFO") {
+    if (filterSeverity === severity) {
+      setFilterSeverity("");
+    } else {
+      setFilterSeverity(severity);
+      if (severity === "A_SIGNALER" || severity === "INFO") {
+        setEngineerView(false);
+      }
+    }
+  }
 
   if (loadingRuns) {
     return <div className="p-6 text-sm text-text-tertiary">Chargement...</div>;
@@ -3172,14 +3210,35 @@ function VerificationsTab({ projectId }: { projectId: string }) {
       {/* Detail du run selectionne */}
       {selectedRunId && runDetail && (
         <div className="space-y-4">
-          {/* KPI cards */}
+          {/* KPI cards — cliquables pour filtrer */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {kpis.map((kpi) => (
-              <div key={kpi.label} className={cn("border rounded p-3 text-center", kpi.bg)}>
-                <div className={cn("text-2xl font-bold", kpi.color)}>{kpi.count}</div>
-                <div className={cn("text-[11px] font-medium mt-0.5", kpi.color)}>{kpi.label}</div>
-              </div>
-            ))}
+            {kpis.map((kpi) => {
+              const active = filterSeverity === kpi.severity;
+              return (
+                <button
+                  key={kpi.label}
+                  type="button"
+                  onClick={() => toggleKpiFilter(kpi.severity)}
+                  title={
+                    active
+                      ? `Cliquer pour retirer le filtre "${kpi.label}"`
+                      : `Cliquer pour filtrer sur "${kpi.label}"`
+                  }
+                  className={cn(
+                    "border rounded p-3 text-center transition-all cursor-pointer select-none",
+                    "hover:shadow-md hover:-translate-y-0.5",
+                    "focus:outline-none focus-visible:ring-2 focus-visible:ring-vinci-blue",
+                    kpi.bg,
+                    active && cn("ring-2 ring-offset-1", kpi.ring)
+                  )}
+                >
+                  <div className={cn("text-2xl font-bold", kpi.color)}>{kpi.count}</div>
+                  <div className={cn("text-[11px] font-medium mt-0.5", kpi.color)}>
+                    {kpi.label}
+                  </div>
+                </button>
+              );
+            })}
           </div>
 
           {/* Barre de filtres */}
@@ -3243,7 +3302,8 @@ function VerificationsTab({ projectId }: { projectId: string }) {
                     <th className="px-3 py-2 text-left font-medium text-white/80 w-[90px]">Code</th>
                     <th className="px-3 py-2 text-left font-medium text-white/80 w-[100px]">Severite</th>
                     <th className="px-3 py-2 text-left font-medium text-white/80">Titre</th>
-                    <th className="px-3 py-2 text-left font-medium text-white/80 w-[120px] hidden sm:table-cell">Repere</th>
+                    <th className="px-3 py-2 text-left font-medium text-white/80 w-[140px] hidden sm:table-cell">Repere</th>
+                    <th className="px-3 py-2 text-left font-medium text-white/80 w-[120px] hidden md:table-cell">Amont</th>
                     <th className="px-3 py-2 text-left font-medium text-white/80 w-[80px]">Statut</th>
                   </tr>
                 </thead>
@@ -3270,6 +3330,9 @@ function VerificationsTab({ projectId }: { projectId: string }) {
                       </td>
                       <td className="px-3 py-2 font-mono text-text-secondary hidden sm:table-cell">
                         {gap.caneco_repere ?? gap.bordereau_num_prix ?? "—"}
+                      </td>
+                      <td className="px-3 py-2 font-mono text-text-tertiary hidden md:table-cell">
+                        {gap.caneco_amont ?? "—"}
                       </td>
                       <td className="px-3 py-2">
                         <GapStatusBadge status={gap.status} />

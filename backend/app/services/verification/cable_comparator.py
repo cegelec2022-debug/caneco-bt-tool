@@ -60,16 +60,21 @@ class CableComparator:
                 severity=A_CORRIGER,
                 description=(
                     f"Circuit '{repere}' : section CANECO = {caneco_sec} mm² "
-                    f"mais bordereau article '{bl.num_prix}' indique {bd_sec} mm²."
+                    f"(designation brute : '{cl.cable or '—'}') "
+                    f"mais bordereau article '{bl.num_prix}' indique {bd_sec} mm² "
+                    f"(designation brute : '{bl.detected_section_mm2 or '—'}')."
                 ),
                 caneco_line_id=cl.id,
                 bordereau_line_id=bl.id,
                 caneco_repere=cl.repere,
+                caneco_amont=cl.amont,
                 bordereau_num_prix=bl.num_prix,
                 fields_compared={
                     "champ": "section_mm2",
                     "caneco": caneco_sec,
                     "bordereau": bd_sec,
+                    "cable_caneco_brut": cl.cable,
+                    "section_bordereau_brut": bl.detected_section_mm2,
                     "ecart_mm2": round(diff, 2),
                 },
                 suggested_action=(
@@ -99,6 +104,7 @@ class CableComparator:
                 caneco_line_id=cl.id,
                 bordereau_line_id=bl.id,
                 caneco_repere=cl.repere,
+                caneco_amont=cl.amont,
                 bordereau_num_prix=bl.num_prix,
                 fields_compared={
                     "champ": "materiau",

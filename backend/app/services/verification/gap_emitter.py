@@ -19,6 +19,7 @@ class GapDTO:
     caneco_line_id: str | None = None
     bordereau_line_id: str | None = None
     caneco_repere: str | None = None
+    caneco_amont: str | None = None
     bordereau_num_prix: str | None = None
     fields_compared: dict[str, Any] | None = None
     suggested_action: str | None = None
@@ -54,6 +55,7 @@ class GapEmitter:
         caneco_line_id: str | None = None,
         bordereau_line_id: str | None = None,
         caneco_repere: str | None = None,
+        caneco_amont: str | None = None,
         bordereau_num_prix: str | None = None,
         fields_compared: dict[str, Any] | None = None,
         suggested_action: str | None = None,
@@ -69,6 +71,7 @@ class GapEmitter:
                 caneco_line_id=caneco_line_id,
                 bordereau_line_id=bordereau_line_id,
                 caneco_repere=caneco_repere,
+                caneco_amont=caneco_amont,
                 bordereau_num_prix=bordereau_num_prix,
                 fields_compared=fields_compared,
                 suggested_action=suggested_action,

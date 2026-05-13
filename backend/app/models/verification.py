@@ -95,6 +95,8 @@ class Gap(Base):
 
     # Reperes lisibles (denormalises pour affichage rapide sans jointure)
     caneco_repere: Mapped[str | None] = mapped_column(String(500))
+    # Tableau / depart amont du circuit dans CANECO (aide a l'identification)
+    caneco_amont: Mapped[str | None] = mapped_column(String(500))
     bordereau_num_prix: Mapped[str | None] = mapped_column(String(100))
 
     # ouvert | acquitte | justifie | clos

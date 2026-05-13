@@ -55,6 +55,7 @@ class GapResponse(BaseModel):
     caneco_line_id: str | None
     bordereau_line_id: str | None
     caneco_repere: str | None
+    caneco_amont: str | None
     bordereau_num_prix: str | None
     status: str
     comment: str | None

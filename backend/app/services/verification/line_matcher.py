@@ -31,6 +31,38 @@ _RE_REPERE = re.compile(r"\(([A-Z0-9_\-]{2,30})\)", re.IGNORECASE)
 _RE_SUB_TABLEAU = re.compile(r"^(.+?)(DIV|SJB|RG)\d+$", re.IGNORECASE)
 
 
+def _parse_simple_section(value: str | None) -> float | None:
+    """Parse une section simple (colonne neutre ou pe) : "1x70", "70", "G70", etc.
+
+    Retourne None si la valeur est vide ou non reconnaissable.
+    """
+    if not value:
+        return None
+    s = str(value).strip()
+    if not s:
+        return None
+    # Tentative directe (ex. "70", "1.5")
+    try:
+        return float(s.replace(",", "."))
+    except ValueError:
+        pass
+    # Pattern "1x70", "1x150", "Nx<section>"
+    m = re.search(r"\d+\s*[xX]\s*(\d+(?:[.,]\d+)?)", s)
+    if m:
+        try:
+            return float(m.group(1).replace(",", "."))
+        except ValueError:
+            return None
+    # Pattern "G70" ou "gG70"
+    m = re.search(r"[Gg]+\s*(\d+(?:[.,]\d+)?)", s)
+    if m:
+        try:
+            return float(m.group(1).replace(",", "."))
+        except ValueError:
+            return None
+    return None
+
+
 def _extract_parent_tableau(repere: str) -> str | None:
     """Extrait le repere du tableau parent d'un sous-tableau.
 
@@ -158,6 +190,7 @@ class LineMatcher:
                     ),
                     caneco_line_id=cl.id,
                     caneco_repere=cl.repere,
+                    caneco_amont=cl.amont,
                     suggested_action=(
                         "Verifier que le tableau est bien prevu au bordereau "
                         "ou qu'il ne s'agit pas d'un tableau de renvoi."
@@ -202,6 +235,7 @@ class LineMatcher:
                         ),
                         caneco_line_id=cl.id,
                         caneco_repere=cl.repere,
+                        caneco_amont=cl.amont,
                         fields_compared={"cable_brut": cl.cable, "materiau": mat},
                         suggested_action=(
                             "Verifier manuellement si un article bordereau correspond "
@@ -219,6 +253,7 @@ class LineMatcher:
                         ),
                         caneco_line_id=cl.id,
                         caneco_repere=cl.repere,
+                        caneco_amont=cl.amont,
                         fields_compared={"section_mm2": sec, "materiau": mat},
                         suggested_action=(
                             "Verifier si un article de section equivalente existe "
@@ -322,7 +357,96 @@ class LineMatcher:
                 ),
             )
 
+        # --- Verification de couverture des sections phase / neutre / PE ---
+        # Pour chaque section UNIQUE presente dans CANECO (sur les 3 colonnes cable / neutre /
+        # pe), on verifie qu'au moins UN article bordereau existe avec cette section.
+        # Sans comptage quantitatif : si CANECO utilise 5 fois du 1x300, il suffit d'un seul
+        # article 300 mm² au bordereau pour considerer la section couverte (le metre lineaire
+        # se chiffre par categorie, pas par instance). Evite les faux positifs.
+        self._check_sections_coverage(self._caneco, bd_cables, report)
+
         return report
+
+    # ------------------------------------------------------------------
+
+    def _check_sections_coverage(
+        self,
+        caneco_lines: list["CanecoLine"],
+        bd_cables: list[BordereauLine],
+        report: "MatchReport",
+    ) -> None:
+        """Verifie l'existence d'AU MOINS UN article bordereau par section CANECO unique.
+
+        Couvre les 3 colonnes CANECO : `cable` (phases), `neutre`, `pe`. Le bordereau ne
+        listant que des sections en mm², on travaille sur l'ensemble des sections (mm²).
+        Un seul gap par section manquante (dedoublonnage strict).
+        """
+        # Sections presentes au bordereau (peu importe le materiau pour cette couverture)
+        bordereau_sections: set[float] = set()
+        for bl in bd_cables:
+            s = parse_bordereau_section(bl.detected_section_mm2)
+            if s is not None:
+                bordereau_sections.add(round(s, 1))
+
+        # Collecte les sections CANECO par origine (phase / neutre / PE) avec un exemple de ligne
+        caneco_sections: dict[tuple[float, str], "CanecoLine"] = {}
+        for cl in caneco_lines:
+            if _is_tableau_style(cl.style):
+                continue
+            # Phase via parse_caneco_cable
+            phase = parse_caneco_cable(cl.cable)
+            if phase is not None:
+                key = (round(phase, 1), "phase")
+                caneco_sections.setdefault(key, cl)
+            # Neutre : ex. "1x70" ou "70"
+            n_sec = _parse_simple_section(cl.neutre)
+            if n_sec is not None:
+                key = (round(n_sec, 1), "neutre")
+                caneco_sections.setdefault(key, cl)
+            # PE : ex. "1x70" ou "70" (ou parfois enrichi par parse_caneco_pe_section)
+            pe_sec = _parse_simple_section(cl.pe)
+            if pe_sec is None and phase is not None:
+                # fallback via designation cable type "5G6" → PE = phase
+                from app.services.verification.cable_utils import parse_caneco_pe_section
+                pe_sec = parse_caneco_pe_section(cl.cable, phase)
+            if pe_sec is not None:
+                key = (round(pe_sec, 1), "pe")
+                caneco_sections.setdefault(key, cl)
+
+        # Pour chaque section manquante au bordereau, emet UN seul gap
+        already_emitted: set[float] = set()
+        for (sec, origine), example_cl in caneco_sections.items():
+            if sec in bordereau_sections:
+                continue
+            if sec in already_emitted:
+                # Une section donnee peut apparaitre sur phase + PE + neutre :
+                # on emet un seul gap par section, pas un par origine.
+                continue
+            already_emitted.add(sec)
+            self._emitter.emit(
+                code="E-001",
+                title=f"Section {sec} mm² presente dans CANECO mais absente du bordereau",
+                severity=A_SIGNALER,
+                description=(
+                    f"La section {sec} mm² est utilisee dans CANECO (colonne {origine}, "
+                    f"ex. circuit '{example_cl.repere or '—'}') mais aucun article cable "
+                    f"de cette section n'a ete trouve dans le bordereau. La quantite n'est "
+                    f"pas comparee — un seul article suffit a couvrir N occurrences CANECO."
+                ),
+                caneco_line_id=example_cl.id,
+                caneco_repere=example_cl.repere,
+                caneco_amont=example_cl.amont,
+                fields_compared={
+                    "section_mm2": sec,
+                    "origine_caneco": origine,
+                    "presente_dans_bordereau": False,
+                    "sections_bordereau_disponibles": sorted(bordereau_sections),
+                },
+                suggested_action=(
+                    f"Ajouter un article cable de section {sec} mm² au bordereau, ou "
+                    f"verifier si CANECO utilise une section sur-dimensionnee a corriger."
+                ),
+            )
 
     # ------------------------------------------------------------------
 

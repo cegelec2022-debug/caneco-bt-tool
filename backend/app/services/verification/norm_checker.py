@@ -130,6 +130,7 @@ class NormChecker:
                     ),
                     caneco_line_id=cl.id,
                     caneco_repere=cl.repere,
+                    caneco_amont=cl.amont,
                     fields_compared={
                         "section_mm2": sec,
                         "min_norme_mm2": min_sec,
@@ -172,6 +173,7 @@ class NormChecker:
                     ),
                     caneco_line_id=cl.id,
                     caneco_repere=cl.repere,
+                    caneco_amont=cl.amont,
                     fields_compared={
                         "section_mm2": sec,
                         "min_norme_mm2": min_sec,
@@ -214,6 +216,7 @@ class NormChecker:
                     ),
                     caneco_line_id=cl.id,
                     caneco_repere=cl.repere,
+                    caneco_amont=cl.amont,
                     fields_compared={
                         "pe_mm2": pe_sec,
                         "min_pe_norme_mm2": min_pe,
@@ -258,6 +261,7 @@ class NormChecker:
                     ),
                     caneco_line_id=cl.id,
                     caneco_repere=cl.repere,
+                    caneco_amont=cl.amont,
                     fields_compared={"neutre_mm2": n_sec, "phase_mm2": phase_sec},
                     norm_rule_code=rule["id"],
                     suggested_action="Augmenter la section neutre a la valeur de la section de phase.",
@@ -354,6 +358,7 @@ class NormChecker:
                     ),
                     caneco_line_id=cl.id,
                     caneco_repere=cl.repere,
+                    caneco_amont=cl.amont,
                     fields_compared={"bloc_differentiel": diff or None, "requis_mA": req_sens},
                     norm_rule_code=rule["id"],
                     suggested_action=(
@@ -403,6 +408,7 @@ class NormChecker:
                     ),
                     caneco_line_id=cl.id,
                     caneco_repere=cl.repere,
+                    caneco_amont=cl.amont,
                     fields_compared={"bloc_differentiel": diff or None, "requis_mA": req_sens},
                     norm_rule_code=rule["id"],
                     suggested_action=(
@@ -452,6 +458,7 @@ class NormChecker:
                     ),
                     caneco_line_id=cl.id,
                     caneco_repere=cl.repere,
+                    caneco_amont=cl.amont,
                     fields_compared={
                         "imag_aval_A": round(imag_cl, 1),
                         "imag_amont_A": round(imag_amont, 1),
@@ -505,6 +512,7 @@ class NormChecker:
                     ),
                     caneco_line_id=cl.id,
                     caneco_repere=cl.repere,
+                    caneco_amont=cl.amont,
                     fields_compared={
                         "courbe_actuelle": current_curve,
                         "courbe_recommandee": recommended,
@@ -543,6 +551,7 @@ class NormChecker:
                     ),
                     caneco_line_id=cl.id,
                     caneco_repere=cl.repere,
+                    caneco_amont=cl.amont,
                     fields_compared={"section_mm2": sec, "min_norme_mm2": min_sec, "materiau": mat},
                     norm_rule_code=rule["id"],
                     suggested_action=(
@@ -580,6 +589,7 @@ class NormChecker:
                     ),
                     caneco_line_id=cl.id,
                     caneco_repere=cl.repere,
+                    caneco_amont=cl.amont,
                     fields_compared={"ddr_type_actuel": "AC", "ddr_type_requis": req_type},
                     norm_rule_code=rule["id"],
                     suggested_action=(
