@@ -7,6 +7,8 @@ export interface User {
   created_at: string;
 }
 
+export type DomaineInstallation = "habitation" | "tertiaire" | "industriel" | "erp";
+
 export interface Project {
   id: string;
   code: string;
@@ -15,6 +17,7 @@ export interface Project {
   agency: string | null;
   description: string | null;
   status: string;
+  domaine_installation: DomaineInstallation;
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -37,6 +40,7 @@ export interface ProjectCreate {
   agency?: string;
   description?: string;
   status?: string;
+  domaine_installation?: DomaineInstallation;
 }
 
 export interface ProjectUpdate {
@@ -45,6 +49,7 @@ export interface ProjectUpdate {
   agency?: string;
   description?: string;
   status?: string;
+  domaine_installation?: DomaineInstallation;
 }
 
 export interface CanecoExport {

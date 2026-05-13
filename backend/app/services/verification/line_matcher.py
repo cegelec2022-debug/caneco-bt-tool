@@ -25,6 +25,30 @@ from app.services.verification.gap_emitter import A_CORRIGER, A_SIGNALER, INFO, 
 # Regex extrayant un repere entre parentheses depuis la designation bordereau
 _RE_REPERE = re.compile(r"\(([A-Z0-9_\-]{2,30})\)", re.IGNORECASE)
 
+# Suffixe de sous-tableau (rang ou division) : "TGBTDIV005", "TES1SJB003", "TADMRRG02"
+# Le bordereau facture le tableau parent ("TGBT") en un seul article. Les sous-tableaux
+# CANECO ne doivent donc pas declencher d'E-013 si leur parent est apparie.
+_RE_SUB_TABLEAU = re.compile(r"^(.+?)(DIV|SJB|RG)\d+$", re.IGNORECASE)
+
+
+def _extract_parent_tableau(repere: str) -> str | None:
+    """Extrait le repere du tableau parent d'un sous-tableau.
+
+    Exemples :
+        TGBTDIV005   -> TGBT
+        TES1DIV009   -> TES1
+        TGBTSJB008   -> TGBT
+        TADMRRG02    -> TADMR
+        TGBT         -> None  (deja un parent)
+        TE-AUX-PT    -> None  (pas de suffixe DIV/SJB/RG)
+    """
+    if not repere:
+        return None
+    m = _RE_SUB_TABLEAU.match(repere.strip())
+    if m:
+        return m.group(1)
+    return None
+
 # Styles CANECO qui correspondent a un tableau ou a une ligne hors-circuit
 _TABLEAU_STYLES = {
     "tableau", "td", "tgbt", "tgt", "tds", "armoire", "coffret",
@@ -84,23 +108,53 @@ class LineMatcher:
         ]
 
         matched_bd_ids: set[str] = set()
+        # Reperes de tableaux parents deja apparies au bordereau : evite d'emettre E-013
+        # pour chaque sous-tableau (TGBTDIV001..009 partagent le meme article 'TGBT' au bordereau).
+        matched_parent_repres: set[str] = set()
+        # Eviter de dupliquer un E-013 quand plusieurs sous-tableaux d'un meme parent non apparie existent
+        emitted_parent_e013: set[str] = set()
 
         # --- Rapprochement tableaux ---
         for cl in tableau_caneco:
             repere = (cl.repere or "").strip().upper()
+            parent = (_extract_parent_tableau(repere) or "").upper()
+
+            # 1. Sous-tableau dont le parent est deja apparie : on l'associe et on saute
+            if parent and parent in matched_parent_repres:
+                report.matched.append(MatchResult(cl, None))
+                continue
+
+            # 2. Match direct sur le repere complet
             bd_match = self._find_tableau_in_bordereau(repere, bd_tableaux, matched_bd_ids)
+
+            # 3. Fallback : match sur le repere du tableau parent (sous-tableau facture en bloc)
+            if not bd_match and parent and parent != repere:
+                bd_match = self._find_tableau_in_bordereau(parent, bd_tableaux, matched_bd_ids)
+
             if bd_match:
                 matched_bd_ids.add(bd_match.id)
+                if parent:
+                    matched_parent_repres.add(parent)
+                # Le repere lui-meme est aussi un parent valide pour ses propres sous-tableaux
+                matched_parent_repres.add(repere)
                 report.matched.append(MatchResult(cl, bd_match))
             else:
+                # Pas de match. Si c'est un sous-tableau d'un parent non apparie,
+                # on emet UN seul E-013 par parent (pas un par enfant).
                 report.unmatched_caneco.append(cl)
+                key_for_emit = parent if parent else repere
+                if key_for_emit in emitted_parent_e013:
+                    continue
+                emitted_parent_e013.add(key_for_emit)
                 self._emitter.emit(
                     code="E-013",
                     title="Tableau CANECO absent du bordereau",
                     severity=A_CORRIGER,
                     description=(
-                        f"Le tableau '{repere}' est present dans l'export CANECO "
+                        f"Le tableau '{key_for_emit}' est present dans l'export CANECO "
                         f"mais aucun article 'tableau' correspondant n'a ete trouve dans le bordereau."
+                        + (f" (regroupe {repere} et ses sous-tableaux DIV/SJB/RG)"
+                           if parent and parent != repere else "")
                     ),
                     caneco_line_id=cl.id,
                     caneco_repere=cl.repere,
@@ -173,18 +227,42 @@ class LineMatcher:
                     )
 
         # --- Articles bordereau sans equivalent CANECO ---
-        for bl in bd_cables + bd_tableaux:
+        # Pour les tableaux : emission individuelle (chaque tableau bordereau est unique)
+        for bl in bd_tableaux:
             if bl.id not in matched_bd_ids:
                 report.unmatched_bordereau.append(bl)
-                code = "E-013" if bl.detected_kind == "tableau" else "E-002"
-                title = (
-                    "Tableau bordereau absent de CANECO"
-                    if bl.detected_kind == "tableau"
-                    else "Cable bordereau sans circuit CANECO associe"
-                )
                 self._emitter.emit(
-                    code=code,
-                    title=title,
+                    code="E-013",
+                    title="Tableau bordereau absent de CANECO",
+                    severity=A_SIGNALER,
+                    description=(
+                        f"L'article bordereau '{bl.num_prix}' ({bl.designation or ''}) "
+                        f"n'a pas de correspondant dans l'export CANECO."
+                    ),
+                    bordereau_line_id=bl.id,
+                    bordereau_num_prix=bl.num_prix,
+                    suggested_action=(
+                        "Verifier si la ligne bordereau correspond a un tableau non exporte "
+                        "ou a un article commun."
+                    ),
+                )
+
+        # Pour les cables : regroupement quantitatif par (section, materiau).
+        # Les sous-prix bordereau (505.1, 505.2, ..., 505.32) sont souvent N variantes
+        # du meme cable. On n'emet E-002 que si le surplus depasse 10 % du pool, et
+        # un seul gap par groupe (au lieu d'un par article).
+        unmatched_cables_by_key: dict[tuple[float, str], list[BordereauLine]] = {}
+        for bl in bd_cables:
+            if bl.id in matched_bd_ids:
+                continue
+            sec = parse_bordereau_section(bl.detected_section_mm2)
+            mat = normalize_material(bl.detected_material) or "Cu"
+            if sec is None:
+                # Section illisible : emission individuelle classique
+                report.unmatched_bordereau.append(bl)
+                self._emitter.emit(
+                    code="E-002",
+                    title="Cable bordereau sans circuit CANECO associe",
                     severity=A_SIGNALER,
                     description=(
                         f"L'article bordereau '{bl.num_prix}' ({bl.designation or ''}) "
@@ -197,6 +275,52 @@ class LineMatcher:
                         "ou a un article commun (fourreaux, tiges filetees, etc.)."
                     ),
                 )
+                continue
+            unmatched_cables_by_key.setdefault((sec, mat), []).append(bl)
+
+        for (sec, mat), pool in unmatched_cables_by_key.items():
+            # Taille totale du pool bordereau = matched + unmatched pour cette cle
+            total_bd = len(bd_index.get((sec, mat), []))
+            surplus = len(pool)
+            ratio = surplus / total_bd if total_bd > 0 else 1.0
+            for bl in pool:
+                report.unmatched_bordereau.append(bl)
+
+            # Si surplus <= 10 % du pool : tolerance, on n'emet pas (probable difference
+            # de granularite CANECO vs bordereau, pas un vrai ecart).
+            if ratio <= 0.10:
+                continue
+
+            # Un seul gap consolide pour le groupe entier
+            num_prix_list = sorted({bl.num_prix for bl in pool if bl.num_prix})
+            head = pool[0]
+            self._emitter.emit(
+                code="E-002",
+                title=f"{surplus} cables bordereau sans circuit CANECO associe (section {sec} mm² {mat})",
+                severity=A_SIGNALER,
+                description=(
+                    f"{surplus} articles bordereau de section {sec} mm² ({mat}) n'ont pas "
+                    f"de correspondant dans l'export CANECO sur un pool de {total_bd} "
+                    f"({ratio * 100:.0f} %). Sous-prix concernes : "
+                    f"{', '.join(num_prix_list[:10])}"
+                    f"{' (...)' if len(num_prix_list) > 10 else ''}."
+                ),
+                bordereau_line_id=head.id,
+                bordereau_num_prix=head.num_prix,
+                fields_compared={
+                    "section_mm2": sec,
+                    "materiau": mat,
+                    "surplus_articles": surplus,
+                    "pool_total": total_bd,
+                    "ratio_surplus": round(ratio, 2),
+                    "sous_prix": num_prix_list,
+                },
+                suggested_action=(
+                    "Verifier si ces articles correspondent a des circuits non exportes "
+                    "(plans definitifs vs CANECO), des fourreaux/cheminements, ou un "
+                    "surdimensionnement quantitatif a la phase chiffrage."
+                ),
+            )
 
         return report
 

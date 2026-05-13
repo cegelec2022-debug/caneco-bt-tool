@@ -204,8 +204,9 @@
       "gap_code": "E-007",
       "requires_validation": true,
       "parameters": {
-        "location_keywords": ["sdb", "salle de bain", "douche", "bain", "wet", "salle eau", "sanitaire"],
-        "required_ddr_sensitivity_ma": 30
+        "location_keywords": ["sdb", "salle de bain", "salle d'eau", "douche", "baignoire", "bain"],
+        "required_ddr_sensitivity_ma": 30,
+        "note": "Mots-cles restreints aux termes legaux NF C 15-100 art. 701 (locaux contenant baignoire ou douche). Exclut sanitaire/WC qui sont hors scope art. 701."
       }
     },
     {

@@ -33,6 +33,7 @@ def create(
     agency: str | None = None,
     description: str | None = None,
     status: str = "actif",
+    domaine_installation: str = "tertiaire",
 ) -> Project:
     project = Project(
         code=code,
@@ -41,6 +42,7 @@ def create(
         agency=agency,
         description=description,
         status=status,
+        domaine_installation=domaine_installation,
         created_by=created_by,
     )
     db.add(project)

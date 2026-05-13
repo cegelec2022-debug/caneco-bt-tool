@@ -21,6 +21,7 @@ export default function ProjectsPage() {
     client: "",
     agency: "",
     status: "actif",
+    domaine_installation: "tertiaire",
   });
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -34,7 +35,14 @@ export default function ProjectsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["projects"] });
       setShowForm(false);
-      setFormData({ code: "", name: "", client: "", agency: "", status: "actif" });
+      setFormData({
+        code: "",
+        name: "",
+        client: "",
+        agency: "",
+        status: "actif",
+        domaine_installation: "tertiaire",
+      });
       setFormError(null);
     },
     onError: (err: unknown) => {
@@ -152,6 +160,34 @@ export default function ProjectsPage() {
                   onChange={(e) => setFormData((d) => ({ ...d, agency: e.target.value }))}
                   className="w-full border border-border-std rounded px-3 py-2 text-sm focus:outline-none focus:border-vinci-blue"
                 />
+              </div>
+              <div>
+                <label className="block text-sm text-text-secondary mb-1">
+                  Domaine d'installation
+                </label>
+                <select
+                  value={formData.domaine_installation ?? "tertiaire"}
+                  onChange={(e) =>
+                    setFormData((d) => ({
+                      ...d,
+                      domaine_installation: e.target.value as
+                        | "habitation"
+                        | "tertiaire"
+                        | "industriel"
+                        | "erp",
+                    }))
+                  }
+                  className="w-full border border-border-std rounded px-3 py-2 text-sm focus:outline-none focus:border-vinci-blue"
+                >
+                  <option value="tertiaire">Tertiaire (bureaux, logistique)</option>
+                  <option value="habitation">Habitation (résidentiel)</option>
+                  <option value="industriel">Industriel</option>
+                  <option value="erp">ERP (recevant du public)</option>
+                </select>
+                <p className="mt-1 text-xs text-text-tertiary">
+                  Conditionne l'application de certaines règles NF C 15-100 (ex. DDR 30 mA
+                  prises obligatoire uniquement en habitation).
+                </p>
               </div>
 
               {formError && (

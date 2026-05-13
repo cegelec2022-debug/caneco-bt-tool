@@ -168,6 +168,13 @@ type TabId = (typeof TABS)[number]["id"];
 
 const STATUS_OPTIONS = ["actif", "en_attente", "archive"];
 
+const DOMAINE_LABELS: Record<string, string> = {
+  habitation: "Habitation (résidentiel)",
+  tertiaire: "Tertiaire (bureaux, logistique)",
+  industriel: "Industriel",
+  erp: "ERP (recevant du public)",
+};
+
 // ---------------------------------------------------------------------------
 // Composant principal
 // ---------------------------------------------------------------------------
@@ -220,6 +227,7 @@ export default function ProjectPage() {
       agency: project.agency ?? "",
       description: project.description ?? "",
       status: project.status,
+      domaine_installation: project.domaine_installation,
     });
     setEditError(null);
     setShowEdit(true);
@@ -330,6 +338,10 @@ export default function ProjectPage() {
                   {project.agency && <Row label="Agence" value={project.agency} />}
                   {project.description && <Row label="Description" value={project.description} />}
                   <Row label="Statut" value={project.status} />
+                  <Row
+                    label="Domaine"
+                    value={DOMAINE_LABELS[project.domaine_installation] ?? project.domaine_installation}
+                  />
                 </dl>
               </div>
 
@@ -440,6 +452,34 @@ export default function ProjectPage() {
                     </option>
                   ))}
                 </select>
+              </div>
+
+              <div>
+                <label className="block text-sm text-text-secondary mb-1">
+                  Domaine d'installation
+                </label>
+                <select
+                  value={editData.domaine_installation ?? project?.domaine_installation ?? "tertiaire"}
+                  onChange={(e) =>
+                    setEditData((d) => ({
+                      ...d,
+                      domaine_installation: e.target.value as
+                        | "habitation"
+                        | "tertiaire"
+                        | "industriel"
+                        | "erp",
+                    }))
+                  }
+                  className="w-full border border-border-std rounded px-3 py-2 text-sm focus:outline-none focus:border-vinci-blue bg-white"
+                >
+                  <option value="tertiaire">Tertiaire (bureaux, logistique)</option>
+                  <option value="habitation">Habitation (résidentiel)</option>
+                  <option value="industriel">Industriel</option>
+                  <option value="erp">ERP (recevant du public)</option>
+                </select>
+                <p className="mt-1 text-xs text-text-tertiary">
+                  Conditionne les règles NF C 15-100 (ex. DDR 30 mA prises = habitation uniquement).
+                </p>
               </div>
 
               {editError && <p className="text-xs text-status-warn">{editError}</p>}
@@ -2975,6 +3015,8 @@ function VerificationsTab({ projectId }: { projectId: string }) {
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [filterSeverity, setFilterSeverity] = useState<string>("");
   const [filterStatus, setFilterStatus] = useState<string>("");
+  // Vue ingenieur : masque INFO + A_SIGNALER, focus sur les ecarts actionnables
+  const [engineerView, setEngineerView] = useState<boolean>(true);
   const [confirmDeleteRunId, setConfirmDeleteRunId] = useState<string | null>(null);
   const [selectedGap, setSelectedGap] = useState<Gap | null>(null);
 
@@ -3063,6 +3105,7 @@ function VerificationsTab({ projectId }: { projectId: string }) {
 
   // Filtre local sur les gaps
   const filteredGaps = (runDetail?.gaps ?? []).filter((g) => {
+    if (engineerView && (g.severity === "INFO" || g.severity === "A_SIGNALER")) return false;
     if (filterSeverity && g.severity !== filterSeverity) return false;
     if (filterStatus && g.status !== filterStatus) return false;
     return true;
@@ -3142,10 +3185,20 @@ function VerificationsTab({ projectId }: { projectId: string }) {
           {/* Barre de filtres */}
           <div className="flex items-center gap-3 flex-wrap">
             <span className="text-xs text-text-tertiary">Filtrer :</span>
+            <label className="flex items-center gap-1.5 text-xs text-text-secondary cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={engineerView}
+                onChange={(e) => setEngineerView(e.target.checked)}
+                className="accent-vinci-blue"
+              />
+              Vue ingénieur (Bloquants + A corriger)
+            </label>
             <select
               value={filterSeverity}
               onChange={(e) => setFilterSeverity(e.target.value)}
-              className="text-xs border border-border-std rounded px-2 py-1 bg-white focus:outline-none focus:border-vinci-blue"
+              disabled={engineerView}
+              className="text-xs border border-border-std rounded px-2 py-1 bg-white focus:outline-none focus:border-vinci-blue disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <option value="">Toutes severites</option>
               <option value="BLOQUANT">Bloquant</option>

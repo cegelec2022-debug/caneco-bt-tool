@@ -27,9 +27,13 @@ from app.services.verification.cable_utils import (
     parse_caneco_conductors,
 )
 from app.services.verification.gap_emitter import BLOQUANT, A_CORRIGER, GapEmitter
-from app.services.verification.line_matcher import LineMatcher
+from app.services.verification.line_matcher import LineMatcher, _extract_parent_tableau
 from app.services.verification.norm_checker import NormChecker
-from app.services.verification.protection_checker import ProtectionChecker, _next_standard_calibre
+from app.services.verification.protection_checker import (
+    ProtectionChecker,
+    _next_standard_calibre,
+    compute_depth_map,
+)
 from app.services.verification.suggestion_engine import SuggestionEngine
 
 
@@ -380,3 +384,123 @@ def test_protection_skips_reserve_style() -> None:
     checker = ProtectionChecker(emitter, icc_presumed_ka=6.0)
     checker.run([cl])
     assert len(emitter.gaps) == 0
+
+
+# ---------------------------------------------------------------------------
+# A — _extract_parent_tableau (matching hierarchique)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "repere,expected_parent",
+    [
+        ("TGBTDIV005", "TGBT"),
+        ("TES1DIV009", "TES1"),
+        ("TGBTSJB008", "TGBT"),
+        ("TADMRDIV011", "TADMR"),
+        ("TADMRRG02", "TADMR"),
+        ("THVACDIV001", "THVAC"),
+        ("TFRIGODIV001", "TFRIGO"),
+        ("TGBT", None),
+        ("TES1", None),
+        ("TE-AUX-PT", None),
+        ("TE-CLIM-ADM", None),
+        ("", None),
+    ],
+)
+def test_extract_parent_tableau(repere: str, expected_parent: str | None) -> None:
+    assert _extract_parent_tableau(repere) == expected_parent
+
+
+# ---------------------------------------------------------------------------
+# D — compute_depth_map (Icc degressif)
+# ---------------------------------------------------------------------------
+
+
+def test_compute_depth_map_simple_arborescence() -> None:
+    """TGBT (0) -> TES1 (1) -> 1E/TES1 (2)."""
+    tgbt = make_caneco(repere="TGBT", style="Tableau", amont=None)
+    tes1 = make_caneco(repere="TES1", style="Tableau", amont="TGBT")
+    ces1 = make_caneco(repere="1E/TES1", style="Eclairage", amont="TES1")
+    depth = compute_depth_map([tgbt, tes1, ces1])
+    assert depth[tgbt.id] == 0
+    assert depth[tes1.id] == 1
+    assert depth[ces1.id] == 2
+
+
+def test_compute_depth_map_orphan_returns_zero() -> None:
+    """Une ligne sans amont reconnu a une profondeur de 0."""
+    cl = make_caneco(repere="ORPHAN", amont="UNKNOWN_PARENT")
+    depth = compute_depth_map([cl])
+    assert depth[cl.id] == 0
+
+
+def test_protection_icc_degressif() -> None:
+    """Icu=4.5 OK en profondeur 3 (Icc local 6 * 0.6^3 = 1.30 kA) mais KO en profondeur 0."""
+    emitter = GapEmitter()
+    cl = make_caneco(repere="DEEP", style="Eclairage", ib=8.0, calibre=10.0, icu=4.5)
+    # Profondeur 3 : Icc_local = 6.0 × 0.6^3 ≈ 1.30 → Icu 4.5 > 1.30 → pas d'ecart E-011
+    checker = ProtectionChecker(emitter, icc_presumed_ka=6.0, depth_map={cl.id: 3})
+    checker.run([cl])
+    e011 = [g for g in emitter.gaps if g.code == "E-011"]
+    assert e011 == []
+
+    # En profondeur 0 : Icc_local = 6.0 → Icu 4.5 < 6.0 → ecart E-011
+    emitter2 = GapEmitter()
+    checker2 = ProtectionChecker(emitter2, icc_presumed_ka=6.0, depth_map={cl.id: 0})
+    checker2.run([cl])
+    e011_2 = [g for g in emitter2.gaps if g.code == "E-011"]
+    assert len(e011_2) == 1
+
+
+# ---------------------------------------------------------------------------
+# C — NormChecker filtre par domaine d'installation
+# ---------------------------------------------------------------------------
+
+
+def test_norm_checker_nfc012_skipped_in_tertiaire() -> None:
+    """NFC-012 (DDR prises 30 mA habitation) n'est pas appliquee en tertiaire."""
+    emitter = GapEmitter()
+    # Style 'prise' + calibre 16 A + pas de DDR : NFC-012 declencherait en habitation
+    cl = make_caneco(repere="P1", style="prise", calibre=16.0, bloc_differentiel=None)
+    checker = NormChecker(emitter, domaine_installation="tertiaire")
+    checker.run([cl])
+    e007 = [g for g in emitter.gaps if g.code == "E-007" and g.norm_rule_code == "NFC-012"]
+    assert e007 == []
+
+
+def test_norm_checker_nfc012_applied_in_habitation() -> None:
+    """NFC-012 est appliquee en habitation (severite A_SIGNALER avec note context)."""
+    emitter = GapEmitter()
+    cl = make_caneco(repere="P1", style="prise", calibre=16.0, bloc_differentiel=None)
+    checker = NormChecker(emitter, domaine_installation="habitation")
+    checker.run([cl])
+    e007 = [g for g in emitter.gaps if g.code == "E-007" and g.norm_rule_code == "NFC-012"]
+    assert len(e007) >= 1
+
+
+# ---------------------------------------------------------------------------
+# B — NFC-013 mots-cles stricts (locaux humides)
+# ---------------------------------------------------------------------------
+
+
+def test_norm_checker_nfc013_does_not_match_sm() -> None:
+    """'SM' (ex. Service Maintenance) ne doit pas declencher NFC-013 locaux humides."""
+    emitter = GapEmitter()
+    cl = make_caneco(repere="2SM/TADMR", style="prise", designation="Prise SM Service",
+                     bloc_differentiel=None)
+    checker = NormChecker(emitter, domaine_installation="tertiaire")
+    checker.run([cl])
+    nfc013 = [g for g in emitter.gaps if g.norm_rule_code == "NFC-013"]
+    assert nfc013 == []
+
+
+def test_norm_checker_nfc013_matches_real_douche() -> None:
+    """'Douche' dans la designation doit declencher NFC-013."""
+    emitter = GapEmitter()
+    cl = make_caneco(repere="DCH1", style="Eclairage", designation="Eclairage douche RDC",
+                     bloc_differentiel=None)
+    checker = NormChecker(emitter, domaine_installation="tertiaire")
+    checker.run([cl])
+    nfc013 = [g for g in emitter.gaps if g.norm_rule_code == "NFC-013"]
+    assert len(nfc013) >= 1

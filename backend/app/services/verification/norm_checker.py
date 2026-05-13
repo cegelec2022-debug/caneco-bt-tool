@@ -11,6 +11,7 @@ Corrections v1.1 :
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 from app.models.caneco import CanecoLine
@@ -76,14 +77,22 @@ def _is_tableau_line(cl: CanecoLine) -> bool:
 class NormChecker:
     """Applique les regles normatives NF C 15-100 aux lignes CANECO."""
 
-    def __init__(self, emitter: GapEmitter) -> None:
+    def __init__(self, emitter: GapEmitter, domaine_installation: str = "tertiaire") -> None:
         self._emitter = emitter
         self._rules = _load_rules()
+        self._domaine = (domaine_installation or "tertiaire").lower()
 
     def run(self, caneco_lines: list[CanecoLine]) -> None:
         for rule in self._rules:
             check_type = rule.get("check_type")
             if not check_type:
+                continue
+            # Filtre par domaine d'installation : certaines regles ne s'appliquent qu'en habitation
+            params = rule.get("parameters", {})
+            rule_context = (params.get("context") or "").lower()
+            if "habitation" in rule_context and self._domaine != "habitation":
+                # NFC-012 et apparentees : applicables uniquement en habitation,
+                # on saute en tertiaire/industriel/ERP
                 continue
             handler = getattr(self, f"_check_{check_type}", None)
             if handler:
@@ -355,16 +364,32 @@ class NormChecker:
                 )
 
     def _check_ddr_required_by_location(self, rule: dict, lines: list[CanecoLine]) -> None:
+        """DDR obligatoire dans les locaux contenant douche ou baignoire (NF C 15-100 art. 701).
+
+        CORRECTION v1.2 : utilise un match par frontiere de mot (regex \\b) au lieu d'un
+        simple `in` substring. Cela evite les faux positifs comme "2SM/TADMR" (SM peut
+        signifier 'salle machine', 'service maintenance', etc., pas 'salle de main').
+        Restreint egalement les mots-cles aux termes legaux NF C 15-100 art. 701 :
+        douche, bain, baignoire, sdb, salle de bain. Exclut 'sanitaire' (peut etre WC
+        seul, hors scope art. 701) et 'wet' (ambigu en francais).
+        """
         params = rule.get("parameters", {})
         loc_keywords = params.get("location_keywords", [])
         req_sens = params.get("required_ddr_sensitivity_ma")
         if not loc_keywords or req_sens is None:
             return
 
+        # Compile les patterns une fois (frontiere de mot a gauche, suffixe pluriel autorise)
+        patterns = [re.compile(r"\b" + re.escape(kw.lower()), re.IGNORECASE) for kw in loc_keywords]
+
         for cl in lines:
-            desig = (cl.designation or "").lower()
-            style = (cl.style or "").lower()
-            if not any(k.lower() in desig or k.lower() in style for k in loc_keywords):
+            if _is_tableau_line(cl):
+                continue
+            desig = (cl.designation or "")
+            style = (cl.style or "")
+            repere = (cl.repere or "")
+            haystack = f"{desig} | {style} | {repere}".lower()
+            if not any(p.search(haystack) for p in patterns):
                 continue
             diff = cl.bloc_differentiel or ""
             if not diff:

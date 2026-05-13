@@ -1,6 +1,11 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
+
+# Domaines d'installation NF C 15-100 : conditionne l'applicabilite de certaines regles
+# (ex. NFC-012 obligation DDR 30 mA sur prises est specifique a l'habitation).
+DomaineInstallation = Literal["habitation", "tertiaire", "industriel", "erp"]
 
 
 class ProjectCreate(BaseModel):
@@ -12,6 +17,7 @@ class ProjectCreate(BaseModel):
     agency: str | None = None
     description: str | None = None
     status: str = "actif"
+    domaine_installation: DomaineInstallation = "tertiaire"
 
 
 class ProjectUpdate(BaseModel):
@@ -22,6 +28,7 @@ class ProjectUpdate(BaseModel):
     agency: str | None = None
     description: str | None = None
     status: str | None = None
+    domaine_installation: DomaineInstallation | None = None
 
 
 class ProjectResponse(BaseModel):
@@ -34,6 +41,7 @@ class ProjectResponse(BaseModel):
     agency: str | None
     description: str | None
     status: str
+    domaine_installation: str
     created_by: str | None
     created_at: datetime
     updated_at: datetime

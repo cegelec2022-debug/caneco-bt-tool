@@ -17,6 +17,9 @@ class Project(Base):
     agency: Mapped[str | None] = mapped_column(String(255))
     description: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="actif")
+    domaine_installation: Mapped[str] = mapped_column(
+        String(50), nullable=False, default="tertiaire"
+    )
     created_by: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

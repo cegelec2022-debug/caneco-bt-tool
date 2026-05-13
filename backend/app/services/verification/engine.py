@@ -15,13 +15,17 @@ from sqlalchemy.orm import Session
 from app.models.caneco import CanecoLine
 from app.models.bordereau import BordereauLine
 from app.models.cps import CpsImport
+from app.models.project import Project
 from app.models.verification import Gap, VerificationRun
 from app.services.verification.cable_comparator import CableComparator
 from app.services.verification.cps_checker import CpsChecker
 from app.services.verification.gap_emitter import BLOQUANT, A_CORRIGER, A_SIGNALER, GapEmitter
 from app.services.verification.line_matcher import LineMatcher
 from app.services.verification.norm_checker import NormChecker
-from app.services.verification.protection_checker import ProtectionChecker
+from app.services.verification.protection_checker import (
+    ProtectionChecker,
+    compute_depth_map,
+)
 from app.services.verification.suggestion_engine import SuggestionEngine
 
 
@@ -51,6 +55,10 @@ def run_verification(
     Returns:
         VerificationRun avec statut 'done' ou 'error'.
     """
+    # Charge le projet pour recuperer le domaine d'installation (conditionne certaines regles)
+    project: Project | None = db.get(Project, project_id)
+    domaine = (project.domaine_installation if project else "tertiaire") or "tertiaire"
+
     run = VerificationRun(
         id=str(uuid.uuid4()),
         project_id=project_id,
@@ -62,7 +70,8 @@ def run_verification(
         created_by_id=created_by_id,
         config_snapshot={
             "icc_presumed_ka": icc_presumed_ka or 6.0,
-            "engine_version": "1.0",
+            "domaine_installation": domaine,
+            "engine_version": "1.2",
         },
     )
     db.add(run)
@@ -100,11 +109,20 @@ def run_verification(
         cable_comp.run(match_report.matched)
 
         # --- 5. Verification protections ---
-        prot_checker = ProtectionChecker(emitter, icc_presumed_ka)
+        # Icc degressif par profondeur : on calcule la profondeur de chaque ligne dans
+        # l'arborescence des tableaux, puis Icc(ligne) = Icc_origine × decay^profondeur.
+        depth_map = compute_depth_map(caneco_lines)
+        prot_checker = ProtectionChecker(
+            emitter,
+            icc_presumed_ka=icc_presumed_ka,
+            depth_map=depth_map,
+        )
         prot_checker.run(caneco_lines)
 
         # --- 6. Regles NF C 15-100 ---
-        norm_checker = NormChecker(emitter)
+        # Le domaine d'installation conditionne l'application de certaines regles
+        # (ex. NFC-012 DDR prises 30 mA est specifique a l'habitation)
+        norm_checker = NormChecker(emitter, domaine_installation=domaine)
         norm_checker.run(caneco_lines)
 
         # --- 7. Regles CPS (si disponible) ---

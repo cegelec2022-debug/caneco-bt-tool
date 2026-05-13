@@ -47,6 +47,7 @@ def create_project(
         agency=payload.agency,
         description=payload.description,
         status=payload.status,
+        domaine_installation=payload.domaine_installation,
         created_by=current_user.id,
     )
 
