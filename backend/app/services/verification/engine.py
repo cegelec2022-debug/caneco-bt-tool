@@ -151,7 +151,9 @@ def run_verification(
                 bordereau_line_id=dto.bordereau_line_id,
                 caneco_repere=dto.caneco_repere,
                 caneco_amont=dto.caneco_amont,
+                caneco_row=dto.caneco_row,
                 bordereau_num_prix=dto.bordereau_num_prix,
+                bordereau_row=dto.bordereau_row,
             )
             db.add(gap)
 

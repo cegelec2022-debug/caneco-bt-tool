@@ -68,7 +68,9 @@ class CableComparator:
                 bordereau_line_id=bl.id,
                 caneco_repere=cl.repere,
                 caneco_amont=cl.amont,
+                caneco_row=cl.excel_row_number,
                 bordereau_num_prix=bl.num_prix,
+                bordereau_row=bl.excel_row_number,
                 fields_compared={
                     "champ": "section_mm2",
                     "caneco": caneco_sec,
@@ -105,7 +107,9 @@ class CableComparator:
                 bordereau_line_id=bl.id,
                 caneco_repere=cl.repere,
                 caneco_amont=cl.amont,
+                caneco_row=cl.excel_row_number,
                 bordereau_num_prix=bl.num_prix,
+                bordereau_row=bl.excel_row_number,
                 fields_compared={
                     "champ": "materiau",
                     "caneco": caneco_mat,

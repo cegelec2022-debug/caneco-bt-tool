@@ -2952,10 +2952,22 @@ function GapDetailPanel({
                 <div className="font-mono font-medium">{gap.caneco_amont}</div>
               </div>
             )}
+            {gap.caneco_row != null && (
+              <div>
+                <div className="text-text-tertiary mb-0.5">Ligne CANECO (Excel)</div>
+                <div className="font-mono font-medium">L. {gap.caneco_row}</div>
+              </div>
+            )}
             {gap.bordereau_num_prix && (
               <div>
                 <div className="text-text-tertiary mb-0.5">N° Prix bordereau</div>
                 <div className="font-mono font-medium">{gap.bordereau_num_prix}</div>
+              </div>
+            )}
+            {gap.bordereau_row != null && (
+              <div>
+                <div className="text-text-tertiary mb-0.5">Ligne bordereau (Excel)</div>
+                <div className="font-mono font-medium">L. {gap.bordereau_row}</div>
               </div>
             )}
             {gap.norm_rule_code && (
@@ -3329,7 +3341,12 @@ function VerificationsTab({ projectId }: { projectId: string }) {
                         )}
                       </td>
                       <td className="px-3 py-2 font-mono text-text-secondary hidden sm:table-cell">
-                        {gap.caneco_repere ?? gap.bordereau_num_prix ?? "—"}
+                        <div>{gap.caneco_repere ?? gap.bordereau_num_prix ?? "—"}</div>
+                        {(gap.caneco_row ?? gap.bordereau_row) && (
+                          <div className="text-[10px] text-text-tertiary mt-0.5">
+                            {gap.caneco_row ? `L. ${gap.caneco_row}` : `L. ${gap.bordereau_row}`}
+                          </div>
+                        )}
                       </td>
                       <td className="px-3 py-2 font-mono text-text-tertiary hidden md:table-cell">
                         {gap.caneco_amont ?? "—"}

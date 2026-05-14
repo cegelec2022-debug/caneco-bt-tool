@@ -139,6 +139,7 @@ class ProtectionChecker:
                 caneco_line_id=cl.id,
                 caneco_repere=cl.repere,
                 caneco_amont=cl.amont,
+                caneco_row=cl.excel_row_number,
                 fields_compared={"champ_manquant": field_label, "valeur": value},
                 suggested_action=(
                     "Verifier dans CANECO que le bilan de puissance et la selection du "
@@ -170,6 +171,7 @@ class ProtectionChecker:
                 caneco_line_id=cl.id,
                 caneco_repere=cl.repere,
                 caneco_amont=cl.amont,
+                caneco_row=cl.excel_row_number,
                 fields_compared={"IB_A": ib, "In_A": calibre},
                 suggested_action=(
                     f"Augmenter le calibre In a au moins {_next_standard_calibre(ib):.0f} A "
@@ -195,6 +197,7 @@ class ProtectionChecker:
                     caneco_line_id=cl.id,
                     caneco_repere=cl.repere,
                     caneco_amont=cl.amont,
+                    caneco_row=cl.excel_row_number,
                     fields_compared={
                         "IrTh_ratio": cl.ir_th_in,
                         "IrTh_abs_A": round(ir_th_abs, 2),
@@ -233,6 +236,7 @@ class ProtectionChecker:
                 caneco_line_id=cl.id,
                 caneco_repere=cl.repere,
                 caneco_amont=cl.amont,
+                caneco_row=cl.excel_row_number,
                 fields_compared={
                     "Icu_kA": icu,
                     "champ_manquant": "Icu",

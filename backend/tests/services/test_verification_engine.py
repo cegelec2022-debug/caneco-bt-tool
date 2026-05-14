@@ -83,6 +83,7 @@ def make_caneco(
     cl.pe = pe
     cl.type_cable = type_cable
     cl.designation = designation
+    cl.excel_row_number = None
     return cl
 
 
@@ -569,3 +570,21 @@ def test_e019_missing_icu_includes_amont() -> None:
     e019 = [g for g in emitter.gaps if g.code == "E-019" and "Icu" in g.title]
     assert len(e019) == 1
     assert e019[0].caneco_amont == "TGBT"
+
+
+# ---------------------------------------------------------------------------
+# L — Numero de ligne Excel CANECO propage dans les gaps
+# ---------------------------------------------------------------------------
+
+
+def test_gap_includes_excel_row() -> None:
+    """Le gap porte le numero de ligne Excel CANECO pour l'identification."""
+    emitter = GapEmitter()
+    cl = make_caneco(repere="1E/TGBT", amont="TGBT", ib=20.0, calibre=16.0, icu=10.0)
+    cl.excel_row_number = 42
+    checker = ProtectionChecker(emitter, icc_presumed_ka=6.0)
+    checker.run([cl])
+    e004 = [g for g in emitter.gaps if g.code == "E-004"]
+    assert len(e004) >= 1
+    for g in e004:
+        assert g.caneco_row == 42, f"Gap '{g.title}' missing caneco_row"

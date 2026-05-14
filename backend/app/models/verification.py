@@ -97,7 +97,11 @@ class Gap(Base):
     caneco_repere: Mapped[str | None] = mapped_column(String(500))
     # Tableau / depart amont du circuit dans CANECO (aide a l'identification)
     caneco_amont: Mapped[str | None] = mapped_column(String(500))
+    # Numero de ligne Excel CANECO (1-based, ce que voit l'utilisateur dans CANECO BT)
+    caneco_row: Mapped[int | None] = mapped_column(Integer)
     bordereau_num_prix: Mapped[str | None] = mapped_column(String(100))
+    # Numero de ligne Excel bordereau (pour les gaps cote bordereau)
+    bordereau_row: Mapped[int | None] = mapped_column(Integer)
 
     # ouvert | acquitte | justifie | clos
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="ouvert")

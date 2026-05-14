@@ -191,6 +191,7 @@ class LineMatcher:
                     caneco_line_id=cl.id,
                     caneco_repere=cl.repere,
                     caneco_amont=cl.amont,
+                    caneco_row=cl.excel_row_number,
                     suggested_action=(
                         "Verifier que le tableau est bien prevu au bordereau "
                         "ou qu'il ne s'agit pas d'un tableau de renvoi."
@@ -236,7 +237,13 @@ class LineMatcher:
                         caneco_line_id=cl.id,
                         caneco_repere=cl.repere,
                         caneco_amont=cl.amont,
-                        fields_compared={"cable_brut": cl.cable, "materiau": mat},
+                        caneco_row=cl.excel_row_number,
+                        fields_compared={
+                            "cable_caneco_brut": cl.cable,
+                            "neutre_caneco_brut": cl.neutre,
+                            "pe_caneco_brut": cl.pe,
+                            "materiau": mat,
+                        },
                         suggested_action=(
                             "Verifier manuellement si un article bordereau correspond "
                             f"a ce circuit (designation cable : '{cl.cable or '—'}')."
@@ -248,13 +255,21 @@ class LineMatcher:
                         title="Circuit CANECO absent du bordereau",
                         severity=A_SIGNALER,
                         description=(
-                            f"Le circuit '{repere}' (section {sec} mm², {mat}) est dans CANECO "
-                            f"mais n'a pas d'article cable correspondant dans le bordereau."
+                            f"Le circuit '{repere}' (section {sec} mm², designation cable "
+                            f"'{cl.cable or '—'}', {mat}) est dans CANECO mais n'a pas "
+                            f"d'article cable correspondant dans le bordereau."
                         ),
                         caneco_line_id=cl.id,
                         caneco_repere=cl.repere,
                         caneco_amont=cl.amont,
-                        fields_compared={"section_mm2": sec, "materiau": mat},
+                        caneco_row=cl.excel_row_number,
+                        fields_compared={
+                            "section_mm2": sec,
+                            "cable_caneco_brut": cl.cable,
+                            "neutre_caneco_brut": cl.neutre,
+                            "pe_caneco_brut": cl.pe,
+                            "materiau": mat,
+                        },
                         suggested_action=(
                             "Verifier si un article de section equivalente existe "
                             "sous une autre designation dans le bordereau."
@@ -276,6 +291,7 @@ class LineMatcher:
                     ),
                     bordereau_line_id=bl.id,
                     bordereau_num_prix=bl.num_prix,
+                    bordereau_row=bl.excel_row_number,
                     suggested_action=(
                         "Verifier si la ligne bordereau correspond a un tableau non exporte "
                         "ou a un article commun."
@@ -305,6 +321,7 @@ class LineMatcher:
                     ),
                     bordereau_line_id=bl.id,
                     bordereau_num_prix=bl.num_prix,
+                    bordereau_row=bl.excel_row_number,
                     suggested_action=(
                         "Verifier si la ligne bordereau correspond a un circuit non exporte "
                         "ou a un article commun (fourreaux, tiges filetees, etc.)."
@@ -342,6 +359,7 @@ class LineMatcher:
                 ),
                 bordereau_line_id=head.id,
                 bordereau_num_prix=head.num_prix,
+                bordereau_row=head.excel_row_number,
                 fields_compared={
                     "section_mm2": sec,
                     "materiau": mat,
@@ -436,9 +454,13 @@ class LineMatcher:
                 caneco_line_id=example_cl.id,
                 caneco_repere=example_cl.repere,
                 caneco_amont=example_cl.amont,
+                caneco_row=example_cl.excel_row_number,
                 fields_compared={
                     "section_mm2": sec,
                     "origine_caneco": origine,
+                    "cable_caneco_brut": example_cl.cable,
+                    "neutre_caneco_brut": example_cl.neutre,
+                    "pe_caneco_brut": example_cl.pe,
                     "presente_dans_bordereau": False,
                     "sections_bordereau_disponibles": sorted(bordereau_sections),
                 },

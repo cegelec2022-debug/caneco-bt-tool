@@ -218,7 +218,9 @@ export interface Gap {
   bordereau_line_id: string | null;
   caneco_repere: string | null;
   caneco_amont: string | null;
+  caneco_row: number | null;
   bordereau_num_prix: string | null;
+  bordereau_row: number | null;
   status: GapStatus;
   comment: string | null;
   resolved_by_id: string | null;

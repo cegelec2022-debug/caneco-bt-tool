@@ -80,15 +80,18 @@ class SuggestionEngine:
                     title=rule["name"],
                     severity=INFO,
                     description=(
-                        f"Circuit '{cl.repere or '—'}' : section {sec} mm² est "
+                        f"Circuit '{cl.repere or '—'}' : section {sec} mm² "
+                        f"(designation brute '{cl.cable or '—'}') est "
                         f"{sec / min_sec:.1f}× la section minimale normative "
                         f"({min_sec} mm² pour {cl.calibre:.0f} A)."
                     ),
                     caneco_line_id=cl.id,
                     caneco_repere=cl.repere,
                     caneco_amont=cl.amont,
+                    caneco_row=cl.excel_row_number,
                     fields_compared={
                         "section_mm2": sec,
+                        "cable_caneco_brut": cl.cable,
                         "min_normative_mm2": min_sec,
                         "ratio": round(sec / min_sec, 2),
                     },
@@ -118,6 +121,7 @@ class SuggestionEngine:
                     caneco_line_id=cl.id,
                     caneco_repere=cl.repere,
                     caneco_amont=cl.amont,
+                    caneco_row=cl.excel_row_number,
                     fields_compared={
                         "calibre_A": cl.calibre,
                         "IB_A": cl.ib,
@@ -147,6 +151,7 @@ class SuggestionEngine:
                     caneco_line_id=cl.id,
                     caneco_repere=cl.repere,
                     caneco_amont=cl.amont,
+                    caneco_row=cl.excel_row_number,
                     fields_compared={
                         "longueur_m": cl.longueur,
                         "longueur_majoree_m": round(cl.longueur * (1 + margin / 100), 1),
@@ -175,6 +180,7 @@ class SuggestionEngine:
                     caneco_line_id=cl.id,
                     caneco_repere=cl.repere,
                     caneco_amont=cl.amont,
+                    caneco_row=cl.excel_row_number,
                     norm_rule_code=rule["id"],
                     suggested_action=(
                         "Utiliser des bornes bimetalliques ou specifiques aluminium. "
@@ -197,6 +203,7 @@ class SuggestionEngine:
                     caneco_line_id=cl.id,
                     caneco_repere=cl.repere,
                     caneco_amont=cl.amont,
+                    caneco_row=cl.excel_row_number,
                     norm_rule_code=rule["id"],
                     suggested_action=(
                         "Verifier si ce circuit est couvert par une DDR de tete "
@@ -246,6 +253,7 @@ class SuggestionEngine:
                     caneco_line_id=cl.id,
                     caneco_repere=cl.repere,
                     caneco_amont=cl.amont,
+                    caneco_row=cl.excel_row_number,
                     fields_compared={
                         "courbe_actuelle": current,
                         "courbe_recommandee": preferred,
@@ -281,6 +289,7 @@ class SuggestionEngine:
                     caneco_line_id=cl.id,
                     caneco_repere=cl.repere,
                     caneco_amont=cl.amont,
+                    caneco_row=cl.excel_row_number,
                     norm_rule_code=rule["id"],
                     suggested_action=(
                         f"Pour les charges lineaires equilibrees, le neutre peut etre "

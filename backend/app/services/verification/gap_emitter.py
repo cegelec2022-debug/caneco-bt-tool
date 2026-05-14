@@ -20,7 +20,9 @@ class GapDTO:
     bordereau_line_id: str | None = None
     caneco_repere: str | None = None
     caneco_amont: str | None = None
+    caneco_row: int | None = None
     bordereau_num_prix: str | None = None
+    bordereau_row: int | None = None
     fields_compared: dict[str, Any] | None = None
     suggested_action: str | None = None
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
@@ -56,7 +58,9 @@ class GapEmitter:
         bordereau_line_id: str | None = None,
         caneco_repere: str | None = None,
         caneco_amont: str | None = None,
+        caneco_row: int | None = None,
         bordereau_num_prix: str | None = None,
+        bordereau_row: int | None = None,
         fields_compared: dict[str, Any] | None = None,
         suggested_action: str | None = None,
     ) -> None:
@@ -72,7 +76,9 @@ class GapEmitter:
                 bordereau_line_id=bordereau_line_id,
                 caneco_repere=caneco_repere,
                 caneco_amont=caneco_amont,
+                caneco_row=caneco_row,
                 bordereau_num_prix=bordereau_num_prix,
+                bordereau_row=bordereau_row,
                 fields_compared=fields_compared,
                 suggested_action=suggested_action,
             )
