@@ -259,6 +259,33 @@ export interface VerificationRunCreate {
   icc_presumed_ka?: number;
 }
 
+// ---------------------------------------------------------------------------
+// Carnet de cables
+// ---------------------------------------------------------------------------
+
+export interface CableBookEntry {
+  type_cable: string;
+  cable_caneco: string;
+  section_mm2: number | null;
+  nb_conducteurs: number;
+  nb_circuits_paralleles: number;
+  longueur_totale_m: number;
+  nb_occurrences: number;
+  pourcentage_du_total: number;
+  reperes_aval: string[];
+  longueurs_par_aval: Record<string, number>;
+}
+
+export interface CableBookReport {
+  entries: CableBookEntry[];
+  longueur_totale_projet_m: number;
+  nb_lignes_caneco_traitees: number;
+  nb_types_cables_distincts: number;
+  longueur_par_type_cable: Record<string, number>;
+  longueur_par_aval: Record<string, number>;
+  top5: CableBookEntry[];
+}
+
 export interface GapStatusUpdate {
   status: GapStatus;
   comment?: string;

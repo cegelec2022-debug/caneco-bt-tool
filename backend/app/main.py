@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
-from app.api.routers import auth, bordereau, caneco, cps, projects, verification
+from app.api.routers import auth, bordereau, cable_book, caneco, cps, projects, verification
 from app.core.config import settings
 from app.core.logging import configure_logging
 from app.core.ratelimit import limiter
@@ -36,6 +36,7 @@ app.include_router(caneco.router)
 app.include_router(bordereau.router)
 app.include_router(cps.router)
 app.include_router(verification.router)
+app.include_router(cable_book.router)
 
 
 @app.get("/api/health", tags=["system"])

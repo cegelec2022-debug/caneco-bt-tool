@@ -36,6 +36,7 @@ import {
   updateBordereauIndice,
   uploadBordereau,
 } from "@/api/bordereau";
+import { downloadCableBookExcel, getCableBook } from "@/api/cable_book";
 import { deleteCpsImport, getCpsImport, listCpsImports, uploadCps } from "@/api/cps";
 import { deleteProject, getProject, updateProject } from "@/api/projects";
 import {
@@ -51,6 +52,7 @@ import type {
   BordereauImport,
   BordereauSection,
   BordereauSheetPreview,
+  CableBookEntry,
   CanecoExport,
   CanecoExportDetail,
   CanecoLine,
@@ -160,6 +162,7 @@ const TABS = [
   { id: "bordereau", label: "Bordereau" },
   { id: "cps", label: "CPS" },
   { id: "verifications", label: "Verifications" },
+  { id: "cable-book", label: "Carnet cables" },
   { id: "tableaux", label: "Tableaux" },
   { id: "doe", label: "DOE" },
 ] as const;
@@ -365,6 +368,8 @@ export default function ProjectPage() {
         {activeTab === "cps" && <CpsTab projectId={id!} />}
 
         {activeTab === "verifications" && <VerificationsTab projectId={id!} />}
+
+        {activeTab === "cable-book" && <CableBookTab projectId={id!} />}
 
         {activeTab === "tableaux" && (
           <div className="flex-1 min-h-0 overflow-auto p-6">
@@ -3516,4 +3521,354 @@ function VerificationsTab({ projectId }: { projectId: string }) {
       )}
     </div>
   );
+}
+
+// ---------------------------------------------------------------------------
+// Carnet de cables — onglet
+// ---------------------------------------------------------------------------
+
+function CableBookTab({ projectId }: { projectId: string }) {
+  const [selectedExportId, setSelectedExportId] = useState<string>("");
+  const [filterAval, setFilterAval] = useState<string>("");
+  const [typeFilter, setTypeFilter] = useState<string>("");
+  const [isDownloading, setIsDownloading] = useState<boolean>(false);
+
+  const { data: exports } = useQuery({
+    queryKey: ["caneco", projectId],
+    queryFn: () => listCaneco(projectId),
+  });
+
+  const lastExportId = exports?.[0]?.id;
+  const effectiveExportId = selectedExportId || lastExportId || "";
+
+  const { data: report, isLoading, isError } = useQuery({
+    queryKey: ["cable-book", projectId, effectiveExportId, filterAval],
+    queryFn: () => getCableBook(projectId, effectiveExportId, filterAval || undefined),
+    enabled: !!effectiveExportId,
+  });
+
+  const filteredEntries = (report?.entries ?? []).filter((e) => {
+    if (typeFilter && !e.type_cable.toLowerCase().includes(typeFilter.toLowerCase()))
+      return false;
+    return true;
+  });
+
+  async function handleExport() {
+    if (!effectiveExportId) return;
+    setIsDownloading(true);
+    try {
+      const { blob, filename } = await downloadCableBookExcel(
+        projectId,
+        effectiveExportId,
+        filterAval || undefined
+      );
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } finally {
+      setIsDownloading(false);
+    }
+  }
+
+  if (!exports || exports.length === 0) {
+    return (
+      <div className="flex-1 min-h-0 overflow-auto p-6">
+        <div className="border border-dashed border-border-std rounded p-8 text-center">
+          <FileSpreadsheet size={28} className="mx-auto text-text-tertiary mb-2" />
+          <p className="text-sm text-text-secondary">
+            Aucun export CANECO disponible. Importez d'abord un export pour generer
+            le carnet de cables.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex-1 min-h-0 overflow-auto p-6 space-y-5">
+      <div className="bg-vinci-blue/5 border border-vinci-blue/20 rounded p-3 text-xs text-vinci-blue">
+        Le carnet de cables aggregre les lignes CANECO par type et section pour le
+        chiffrage et les commandes. Les longueurs tiennent compte du nombre de
+        cables paralleles (ex. 3X(1x150) = 3x la longueur de la ligne).
+      </div>
+
+      <div className="flex items-end gap-3 flex-wrap">
+        <div>
+          <label className="block text-xs text-text-tertiary mb-1">Export CANECO</label>
+          <select
+            value={effectiveExportId}
+            onChange={(e) => setSelectedExportId(e.target.value)}
+            className="text-xs border border-border-std rounded px-2 py-1.5 bg-white min-w-[200px]"
+          >
+            {exports.map((ex) => (
+              <option key={ex.id} value={ex.id}>
+                Indice {ex.indice} — {ex.file_name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs text-text-tertiary mb-1">
+            Filtre tableau aval (optionnel)
+          </label>
+          <input
+            type="text"
+            value={filterAval}
+            onChange={(e) => setFilterAval(e.target.value)}
+            placeholder="Ex. TGBT, TES1..."
+            className="text-xs border border-border-std rounded px-2 py-1.5 bg-white min-w-[180px]"
+          />
+        </div>
+        <div>
+          <label className="block text-xs text-text-tertiary mb-1">
+            Filtre type cable
+          </label>
+          <input
+            type="text"
+            value={typeFilter}
+            onChange={(e) => setTypeFilter(e.target.value)}
+            placeholder="Ex. U1000R2V, CR1..."
+            className="text-xs border border-border-std rounded px-2 py-1.5 bg-white min-w-[180px]"
+          />
+        </div>
+        <button
+          type="button"
+          onClick={handleExport}
+          disabled={isDownloading || !report}
+          className={cn(
+            "flex items-center gap-1.5 px-3 py-1.5 text-xs rounded transition-colors",
+            "bg-vinci-blue text-white hover:bg-vinci-blue/90",
+            "disabled:opacity-50 disabled:cursor-not-allowed"
+          )}
+        >
+          <Download size={11} />
+          {isDownloading ? "Generation..." : "Exporter Excel"}
+        </button>
+      </div>
+
+      {isLoading && (
+        <div className="text-sm text-text-tertiary">Calcul du carnet en cours...</div>
+      )}
+      {isError && (
+        <div className="text-sm text-status-warn">
+          Erreur lors du chargement du carnet de cables.
+        </div>
+      )}
+
+      {report && (
+        <>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <KpiCard
+              label="Longueur totale projet"
+              value={`${formatMeters(report.longueur_totale_projet_m)} m`}
+              color="text-vinci-blue"
+              bg="bg-vinci-blue/5 border-vinci-blue/20"
+            />
+            <KpiCard
+              label="Types de cables"
+              value={report.nb_types_cables_distincts}
+              color="text-text-primary"
+              bg="bg-bg-cell border-border-std"
+            />
+            <KpiCard
+              label="Lignes CANECO"
+              value={report.nb_lignes_caneco_traitees}
+              color="text-text-primary"
+              bg="bg-bg-cell border-border-std"
+            />
+            <KpiCard
+              label="Lignes affichees"
+              value={filteredEntries.length}
+              color="text-text-primary"
+              bg="bg-bg-cell border-border-std"
+            />
+          </div>
+
+          {report.top5.length > 0 && (
+            <div className="border border-border-std rounded p-4 bg-white">
+              <h4 className="text-xs font-semibold text-text-tertiary uppercase tracking-wide mb-3">
+                Top 5 des cables les plus consommes
+              </h4>
+              <div className="space-y-1.5">
+                {report.top5.map((e, i) => (
+                  <div
+                    key={`${e.type_cable}-${e.cable_caneco}`}
+                    className="flex items-center justify-between text-xs"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-text-tertiary font-mono w-4">#{i + 1}</span>
+                      <span className="text-text-primary">{e.type_cable}</span>
+                      <span className="font-mono bg-bg-cell px-1.5 py-0.5 rounded text-text-secondary">
+                        {e.cable_caneco}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-text-primary font-medium">
+                        {formatMeters(e.longueur_totale_m)} m
+                      </span>
+                      <span className="text-text-tertiary w-12 text-right">
+                        {e.pourcentage_du_total.toFixed(1)}%
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="border border-border-std rounded overflow-hidden">
+            <div className="px-4 py-2 bg-bg-cell border-b border-border-std">
+              <h4 className="text-xs font-semibold text-text-tertiary uppercase tracking-wide">
+                Sommaire des cables ({filteredEntries.length} ligne
+                {filteredEntries.length !== 1 ? "s" : ""})
+              </h4>
+            </div>
+            <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+              <table className="w-full text-xs">
+                <thead className="sticky top-0 z-10" style={{ backgroundColor: "#001E50" }}>
+                  <tr>
+                    <th className="px-3 py-2 text-left font-medium text-white/80">
+                      Type cable
+                    </th>
+                    <th className="px-3 py-2 text-left font-medium text-white/80">
+                      Section CANECO
+                    </th>
+                    <th className="px-3 py-2 text-right font-medium text-white/80 w-[100px]">
+                      Section (mm²)
+                    </th>
+                    <th className="px-3 py-2 text-right font-medium text-white/80 w-[140px]">
+                      Long. totale (m)
+                    </th>
+                    <th className="px-3 py-2 text-right font-medium text-white/80 w-[110px] hidden sm:table-cell">
+                      Nb conducteurs
+                    </th>
+                    <th className="px-3 py-2 text-right font-medium text-white/80 w-[110px] hidden sm:table-cell">
+                      Occurrences
+                    </th>
+                    <th className="px-3 py-2 text-right font-medium text-white/80 w-[100px]">
+                      % projet
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredEntries.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={7}
+                        className="px-3 py-6 text-center text-text-tertiary"
+                      >
+                        Aucun cable ne correspond aux filtres actifs.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredEntries.map((e, i) => (
+                      <CableBookRow
+                        key={`${e.type_cable}-${e.cable_caneco}`}
+                        entry={e}
+                        striped={i % 2 === 1}
+                      />
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {Object.keys(report.longueur_par_aval).length > 0 && (
+            <div className="border border-border-std rounded p-4 bg-white">
+              <h4 className="text-xs font-semibold text-text-tertiary uppercase tracking-wide mb-3">
+                Longueur par tableau aval / lot
+              </h4>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+                {Object.entries(report.longueur_par_aval)
+                  .sort(([, a], [, b]) => b - a)
+                  .map(([aval, lg]) => (
+                    <div
+                      key={aval}
+                      className="flex items-center justify-between bg-bg-cell rounded px-2 py-1.5 text-xs"
+                    >
+                      <span className="font-mono text-text-secondary truncate">
+                        {aval}
+                      </span>
+                      <span className="text-text-primary font-medium">
+                        {formatMeters(lg)} m
+                      </span>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function CableBookRow({ entry, striped }: { entry: CableBookEntry; striped: boolean }) {
+  return (
+    <tr
+      className={cn(
+        "border-t border-border-std hover:bg-vinci-blue/5 transition-colors",
+        striped ? "bg-bg-cell/40" : "bg-white"
+      )}
+    >
+      <td className="px-3 py-2 text-text-primary">{entry.type_cable}</td>
+      <td className="px-3 py-2 font-mono text-text-primary">
+        <span className="bg-bg-cell px-1.5 py-0.5 rounded border border-border-std">
+          {entry.cable_caneco}
+        </span>
+      </td>
+      <td className="px-3 py-2 text-right text-text-secondary">
+        {entry.section_mm2 != null ? entry.section_mm2 : "—"}
+      </td>
+      <td className="px-3 py-2 text-right text-text-primary font-medium">
+        {formatMeters(entry.longueur_totale_m)}
+      </td>
+      <td className="px-3 py-2 text-right text-text-tertiary hidden sm:table-cell">
+        {entry.nb_conducteurs > 0 ? entry.nb_conducteurs : "—"}
+        {entry.nb_circuits_paralleles > 1 && (
+          <span className="text-[10px] text-text-tertiary ml-1">
+            (x{entry.nb_circuits_paralleles})
+          </span>
+        )}
+      </td>
+      <td className="px-3 py-2 text-right text-text-tertiary hidden sm:table-cell">
+        {entry.nb_occurrences}
+      </td>
+      <td className="px-3 py-2 text-right text-text-primary font-medium">
+        {entry.pourcentage_du_total.toFixed(2)}%
+      </td>
+    </tr>
+  );
+}
+
+function KpiCard({
+  label,
+  value,
+  color,
+  bg,
+}: {
+  label: string;
+  value: string | number;
+  color: string;
+  bg: string;
+}) {
+  return (
+    <div className={cn("border rounded p-3 text-center", bg)}>
+      <div className={cn("text-xl font-bold", color)}>{value}</div>
+      <div className="text-[11px] font-medium text-text-secondary mt-0.5">{label}</div>
+    </div>
+  );
+}
+
+function formatMeters(m: number): string {
+  return new Intl.NumberFormat("fr-FR", {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  }).format(m);
 }
