@@ -1,0 +1,16 @@
+# Override "mode pitch / demo distante".
+#
+# Sert le BUILD DE PRODUCTION (rapide a travers un tunnel ngrok) au lieu du
+# serveur de dev Vite (lent a distance car des centaines de modules separes).
+#
+# Mode dev normal (hot reload, code en direct) :
+#   docker compose up -d
+#
+# Mode pitch (rapide via le lien ngrok, pas de hot reload) :
+#   docker compose -f docker-compose.yml -f docker-compose.preview.yml up -d frontend
+#
+# Apres une modif de code, pour rafraichir la demo : relancer la meme commande
+# mode pitch (elle reconstruit le build).
+services:
+  frontend:
+    command: sh -c "npx vite build && npx vite preview --host 0.0.0.0 --port 5173"
