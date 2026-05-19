@@ -36,10 +36,14 @@
     @apply border-border;
   }
   html,
-  body,
-  #root {
+  body {
     height: 100%;
-    overflow: hidden;
+  }
+  /* #root grandit avec le contenu : les pages hors Layout (connexion, fiche
+     publique) defilent naturellement. Le shell de l'app authentifiee fixe
+     lui-meme sa hauteur (Layout : h-screen overflow-hidden). */
+  #root {
+    min-height: 100%;
   }
   body {
     @apply bg-background text-foreground font-sans;

@@ -96,8 +96,14 @@ export default function LoginPage() {
         <img src="/logo-vinci.png" alt="VINCI Energies" className="h-10 object-contain" />
       </header>
 
-      <main className="flex-1 flex items-center justify-center p-6">
-        <div className="w-full max-w-sm">
+      <main
+        className="relative flex-1 flex items-center justify-center bg-cover bg-center p-6"
+        style={{ backgroundImage: "url('/vinci-login-bg.png')" }}
+      >
+        {/* Voile sombre VINCI pour garder le formulaire lisible par-dessus la photo */}
+        <div className="absolute inset-0 bg-vinci-blue/40" aria-hidden="true" />
+
+        <div className="relative w-full max-w-sm rounded-lg border border-border-std bg-white p-8 shadow-2xl">
           <div className="w-8 h-1 bg-vinci-red mb-6" />
           <h2 className="text-xl font-semibold text-text-primary mb-1">Connexion</h2>
           <p className="text-sm text-text-tertiary mb-6">
