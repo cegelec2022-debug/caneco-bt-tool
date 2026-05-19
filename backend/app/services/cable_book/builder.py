@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from typing import Iterable
 
 from app.models.caneco import CanecoLine
+from app.services.tableau.builder import is_tableau_style, normalize_repere
 from app.services.verification.cable_utils import (
     normalize_material,
     parse_caneco_cable,
@@ -198,12 +199,29 @@ def build_cable_book(
     Returns:
         CableBookReport avec entries triees par longueur totale decroissante et stats.
     """
+    lines = list(caneco_lines)
+
+    # Ensemble des reperes de vrais tableaux (style = Tableau/Armoire/Coffret).
+    # Le sommaire "par tableau aval" ne doit regrouper que des tableaux, jamais
+    # des circuits (1E/TES1, TES1-1ECL001...).
+    tableau_keys = {
+        normalize_repere(cl.repere) for cl in lines if is_tableau_style(cl.style)
+    }
+
+    def _tableau_parent(cl: CanecoLine) -> str | None:
+        """Tableau de rattachement d'une ligne (amont si c'est un tableau)."""
+        for candidate in (cl.amont, cl.repere_aval, cl.repere):
+            cand = (candidate or "").strip()
+            if cand and normalize_repere(cand) in tableau_keys:
+                return cand
+        return None
+
     # Agregation par cle (type_cable, cable_brut_normalise)
     buckets: dict[tuple[str, str], CableBookEntry] = {}
 
     nb_lignes_traitees = 0
 
-    for cl in caneco_lines:
+    for cl in lines:
         # Filtre par tableau aval si demande
         if filter_repere_aval:
             haystack = " ".join(
@@ -250,7 +268,8 @@ def build_cable_book(
         entry.longueur_totale_m += longueur_apport
         entry.nb_occurrences += 1
 
-        aval = (cl.repere_aval or cl.repere or "").strip()
+        # Rattachement au tableau parent (jamais a un circuit)
+        aval = _tableau_parent(cl)
         if aval:
             entry.reperes_aval.add(aval)
             entry.longueurs_par_aval[aval] = (

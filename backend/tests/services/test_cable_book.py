@@ -182,11 +182,24 @@ def test_build_cable_book_top5_and_per_type_stats() -> None:
 
 
 def test_build_cable_book_aval_subtotals() -> None:
-    """longueurs_par_aval permet de sortir les sous-totaux par zone/lot."""
+    """Sous-totaux regroupes par TABLEAU reel (jamais par circuit)."""
     lines = [
-        make_line(repere_aval="ZONE_A", type_cable="U1000R2V", cable="5G6", longueur=10.0),
-        make_line(repere_aval="ZONE_A", type_cable="U1000R2V", cable="5G6", longueur=15.0),
-        make_line(repere_aval="ZONE_B", type_cable="U1000R2V", cable="5G6", longueur=5.0),
+        # Tableaux (style = Tableau) : definissent les regroupements valides
+        make_line(repere="ZONE_A", style="Tableau", cable=None),
+        make_line(repere="ZONE_B", style="Tableau", cable=None),
+        # Circuits rattaches a leur tableau via amont
+        make_line(
+            repere="C1", amont="ZONE_A", style="Eclairage",
+            type_cable="U1000R2V", cable="5G6", longueur=10.0,
+        ),
+        make_line(
+            repere="C2", amont="ZONE_A", style="Eclairage",
+            type_cable="U1000R2V", cable="5G6", longueur=15.0,
+        ),
+        make_line(
+            repere="C3", amont="ZONE_B", style="PC",
+            type_cable="U1000R2V", cable="5G6", longueur=5.0,
+        ),
     ]
     report = build_cable_book(lines)
     entry = report.entries[0]
