@@ -290,3 +290,40 @@ export interface GapStatusUpdate {
   status: GapStatus;
   comment?: string;
 }
+
+// --- Module A : tableaux electriques + QR ---------------------------------
+
+export interface Tableau {
+  id: string;
+  repere: string;
+  designation: string | null;
+  qr_token: string;
+  nb_departs: number;
+  longueur_totale_m: number;
+}
+
+export interface TableauxGenerateResult {
+  caneco_indice: string;
+  nb_tableaux: number;
+  nb_departs_total: number;
+  tableaux: Tableau[];
+}
+
+export interface FicheRow {
+  label: string;
+  value: string | null;
+}
+
+export interface FicheSection {
+  title: string;
+  rows: FicheRow[];
+}
+
+export interface FichePublic {
+  repere: string;
+  designation: string | null;
+  project_name: string;
+  indice: string;
+  nb_departs: number;
+  sections: FicheSection[];
+}

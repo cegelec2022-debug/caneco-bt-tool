@@ -8,17 +8,24 @@ import {
   ChevronLeft,
   ChevronRight,
   Download,
+  ExternalLink,
   FileSpreadsheet,
+  FileText,
   Info,
+  Link2,
+  Loader2,
   Pencil,
   Play,
+  Printer,
+  QrCode,
+  RefreshCw,
   Search,
   ShieldAlert,
   Trash2,
   Upload,
   X,
 } from "lucide-react";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   deleteCaneco,
@@ -37,6 +44,14 @@ import {
   uploadBordereau,
 } from "@/api/bordereau";
 import { downloadCableBookExcel, getCableBook } from "@/api/cable_book";
+import {
+  downloadFichePdf,
+  downloadLabelsPdf,
+  fetchTableauQrObjectUrl,
+  generateTableaux,
+  listTableaux,
+  publicFicheUrl,
+} from "@/api/tableaux";
 import { deleteCpsImport, getCpsImport, listCpsImports, uploadCps } from "@/api/cps";
 import { deleteProject, getProject, updateProject } from "@/api/projects";
 import {
@@ -62,6 +77,7 @@ import type {
   GapSeverity,
   GapStatus,
   ProjectUpdate,
+  Tableau,
   VerificationRun,
   VerificationRunDetail,
 } from "@/types";
@@ -371,13 +387,7 @@ export default function ProjectPage() {
 
         {activeTab === "cable-book" && <CableBookTab projectId={id!} />}
 
-        {activeTab === "tableaux" && (
-          <div className="flex-1 min-h-0 overflow-auto p-6">
-            <div className="text-sm text-text-tertiary">
-              Module 3 — Bordereau / CPS / Verification (disponible en V1.1)
-            </div>
-          </div>
-        )}
+        {activeTab === "tableaux" && <TableauxTab projectId={id!} />}
         {activeTab === "doe" && (
           <div className="flex-1 min-h-0 overflow-auto p-6">
             <div className="text-sm text-text-tertiary">
@@ -3519,6 +3529,379 @@ function VerificationsTab({ projectId }: { projectId: string }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Tableaux electriques + QR — onglet (Module A)
+// ---------------------------------------------------------------------------
+
+function TableauxTab({ projectId }: { projectId: string }) {
+  const queryClient = useQueryClient();
+  const [selectedExportId, setSelectedExportId] = useState<string>("");
+  const [qrTableau, setQrTableau] = useState<Tableau | null>(null);
+  const [isLabels, setIsLabels] = useState(false);
+  const [genResult, setGenResult] = useState<string | null>(null);
+
+  const { data: exports } = useQuery({
+    queryKey: ["caneco", projectId],
+    queryFn: () => listCaneco(projectId),
+  });
+
+  const { data: tableaux, isLoading } = useQuery({
+    queryKey: ["tableaux", projectId],
+    queryFn: () => listTableaux(projectId),
+  });
+
+  const effectiveExportId = selectedExportId || exports?.[0]?.id || "";
+
+  const generateMut = useMutation({
+    mutationFn: () => generateTableaux(projectId, effectiveExportId),
+    onSuccess: (res) => {
+      setGenResult(
+        `${res.nb_tableaux} tableau(x) et ${res.nb_departs_total} depart(s) ` +
+          `generes depuis l'indice ${res.caneco_indice}.`
+      );
+      queryClient.invalidateQueries({ queryKey: ["tableaux", projectId] });
+    },
+  });
+
+  async function handleLabels() {
+    setIsLabels(true);
+    try {
+      await downloadLabelsPdf(projectId);
+    } finally {
+      setIsLabels(false);
+    }
+  }
+
+  if (!exports || exports.length === 0) {
+    return (
+      <div className="flex-1 min-h-0 overflow-auto p-6">
+        <div className="border border-dashed border-border-std rounded p-8 text-center">
+          <QrCode size={28} className="mx-auto text-text-tertiary mb-2" />
+          <p className="text-sm text-text-secondary">
+            Aucun export CANECO disponible. Importez d'abord un export pour
+            generer les tableaux et leurs QR codes.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const list = tableaux ?? [];
+  const totalDeparts = list.reduce((s, t) => s + t.nb_departs, 0);
+  const totalLongueur = list.reduce((s, t) => s + t.longueur_totale_m, 0);
+
+  return (
+    <div className="flex-1 min-h-0 overflow-auto p-6 space-y-5">
+      <div className="bg-vinci-blue/5 border border-vinci-blue/20 rounded p-3 text-xs text-vinci-blue">
+        Chaque tableau electrique recoit un QR code unique pointant vers une
+        fiche cables consultable sans connexion (lecture seule). La regeneration
+        conserve les QR deja imprimes : les etiquettes posees sur les armoires
+        restent valides.
+      </div>
+
+      <div className="flex items-end gap-3 flex-wrap">
+        <div>
+          <label className="block text-xs text-text-tertiary mb-1">
+            Export CANECO source
+          </label>
+          <select
+            value={effectiveExportId}
+            onChange={(e) => setSelectedExportId(e.target.value)}
+            className="text-xs border border-border-std rounded px-2 py-1.5 bg-white min-w-[220px]"
+          >
+            {exports.map((ex) => (
+              <option key={ex.id} value={ex.id}>
+                Indice {ex.indice} — {ex.file_name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <button
+          type="button"
+          onClick={() => generateMut.mutate()}
+          disabled={generateMut.isPending || !effectiveExportId}
+          className={cn(
+            "flex items-center gap-1.5 px-3 py-1.5 text-xs rounded transition-colors",
+            "bg-vinci-blue text-white hover:bg-vinci-blue/90",
+            "disabled:opacity-50 disabled:cursor-not-allowed"
+          )}
+        >
+          {generateMut.isPending ? (
+            <Loader2 size={12} className="animate-spin" />
+          ) : (
+            <RefreshCw size={12} />
+          )}
+          {list.length > 0 ? "Mettre a jour les tableaux" : "Generer les tableaux"}
+        </button>
+        <button
+          type="button"
+          onClick={handleLabels}
+          disabled={isLabels || list.length === 0}
+          className={cn(
+            "flex items-center gap-1.5 px-3 py-1.5 text-xs rounded transition-colors",
+            "border border-vinci-blue text-vinci-blue hover:bg-vinci-blue/5",
+            "disabled:opacity-50 disabled:cursor-not-allowed"
+          )}
+        >
+          {isLabels ? (
+            <Loader2 size={12} className="animate-spin" />
+          ) : (
+            <Printer size={12} />
+          )}
+          Imprimer les etiquettes (PDF A4)
+        </button>
+      </div>
+
+      {genResult && (
+        <div className="text-xs text-green-700 bg-green-50 border border-green-200 rounded px-3 py-2">
+          {genResult}
+        </div>
+      )}
+      {generateMut.isError && (
+        <div className="text-xs text-status-warn bg-red-50 border border-red-200 rounded px-3 py-2">
+          Echec de la generation des tableaux.
+        </div>
+      )}
+
+      {list.length > 0 && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          <KpiCard
+            label="Tableaux"
+            value={list.length}
+            color="text-vinci-blue"
+            bg="bg-vinci-blue/5 border-vinci-blue/20"
+          />
+          <KpiCard
+            label="Circuits alimentes (total)"
+            value={totalDeparts}
+            color="text-text-primary"
+            bg="bg-bg-cell border-border-std"
+          />
+          <KpiCard
+            label="Longueur cumulee"
+            value={`${formatMeters(totalLongueur)} m`}
+            color="text-text-primary"
+            bg="bg-bg-cell border-border-std"
+          />
+        </div>
+      )}
+
+      {isLoading && (
+        <div className="text-sm text-text-tertiary">Chargement des tableaux...</div>
+      )}
+
+      {!isLoading && list.length === 0 && (
+        <div className="border border-dashed border-border-std rounded p-8 text-center">
+          <QrCode size={26} className="mx-auto text-text-tertiary mb-2" />
+          <p className="text-sm text-text-secondary">
+            Aucun tableau genere. Cliquez sur « Generer les tableaux » a partir
+            de l'export CANECO selectionne.
+          </p>
+        </div>
+      )}
+
+      {list.length > 0 && (
+        <div className="border border-border-std rounded overflow-hidden">
+          <div className="px-4 py-2 bg-bg-cell border-b border-border-std">
+            <h4 className="text-xs font-semibold text-text-tertiary uppercase tracking-wide">
+              Tableaux du projet ({list.length})
+            </h4>
+          </div>
+          <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+            <table className="w-full text-xs">
+              <thead
+                className="sticky top-0 z-10"
+                style={{ backgroundColor: "#001E50" }}
+              >
+                <tr>
+                  <th className="px-3 py-2 text-left font-medium text-white/90">
+                    Repere
+                  </th>
+                  <th className="px-3 py-2 text-left font-medium text-white/90">
+                    Designation
+                  </th>
+                  <th className="px-3 py-2 text-right font-medium text-white/90 w-[110px]">
+                    Circuits
+                  </th>
+                  <th className="px-3 py-2 text-right font-medium text-white/90 w-[130px]">
+                    Longueur (m)
+                  </th>
+                  <th className="px-3 py-2 text-right font-medium text-white/90 w-[230px]">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {list.map((t, i) => (
+                  <tr
+                    key={t.id}
+                    className={i % 2 === 0 ? "bg-white" : "bg-bg-cell"}
+                  >
+                    <td className="px-3 py-2 font-semibold text-vinci-blue border-t border-border-std">
+                      {t.repere}
+                    </td>
+                    <td className="px-3 py-2 text-text-secondary border-t border-border-std">
+                      {t.designation || "—"}
+                    </td>
+                    <td className="px-3 py-2 text-right text-text-primary border-t border-border-std">
+                      {t.nb_departs}
+                    </td>
+                    <td className="px-3 py-2 text-right text-text-primary border-t border-border-std">
+                      {formatMeters(t.longueur_totale_m)}
+                    </td>
+                    <td className="px-3 py-2 border-t border-border-std">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setQrTableau(t)}
+                          className="flex items-center gap-1 px-2 py-1 rounded border border-border-std hover:bg-bg-light text-text-secondary"
+                          title="Afficher le QR code"
+                        >
+                          <QrCode size={12} /> QR
+                        </button>
+                        <a
+                          href={publicFicheUrl(t.qr_token)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-1 px-2 py-1 rounded border border-border-std hover:bg-bg-light text-text-secondary"
+                          title="Ouvrir la fiche publique"
+                        >
+                          <ExternalLink size={12} /> Fiche
+                        </a>
+                        <button
+                          type="button"
+                          onClick={() => downloadFichePdf(projectId, t.id)}
+                          className="flex items-center gap-1 px-2 py-1 rounded border border-border-std hover:bg-bg-light text-text-secondary"
+                          title="Telecharger la fiche en PDF"
+                        >
+                          <FileText size={12} /> PDF
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {qrTableau && (
+        <QrModal
+          projectId={projectId}
+          tableau={qrTableau}
+          onClose={() => setQrTableau(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function QrModal({
+  projectId,
+  tableau,
+  onClose,
+}: {
+  projectId: string;
+  tableau: Tableau;
+  onClose: () => void;
+}) {
+  const [qrUrl, setQrUrl] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const ficheUrl = publicFicheUrl(tableau.qr_token);
+
+  useEffect(() => {
+    let revoke: string | null = null;
+    let active = true;
+    fetchTableauQrObjectUrl(projectId, tableau.id).then((url) => {
+      if (active) {
+        revoke = url;
+        setQrUrl(url);
+      } else {
+        URL.revokeObjectURL(url);
+      }
+    });
+    return () => {
+      active = false;
+      if (revoke) URL.revokeObjectURL(revoke);
+    };
+  }, [projectId, tableau.id]);
+
+  async function copyLink() {
+    await navigator.clipboard.writeText(ficheUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1800);
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-lg max-w-sm w-full p-6"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between mb-4">
+          <div>
+            <p className="text-xs uppercase tracking-wide text-text-tertiary">
+              QR — Tableau
+            </p>
+            <h3 className="text-lg font-bold text-vinci-blue">
+              {tableau.repere}
+            </h3>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-text-tertiary hover:text-text-secondary"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="flex justify-center mb-4">
+          {qrUrl ? (
+            <img
+              src={qrUrl}
+              alt={`QR ${tableau.repere}`}
+              className="w-56 h-56 border border-border-std rounded"
+            />
+          ) : (
+            <div className="w-56 h-56 flex items-center justify-center border border-border-std rounded">
+              <Loader2 size={20} className="animate-spin text-text-tertiary" />
+            </div>
+          )}
+        </div>
+
+        <div className="text-xs text-text-tertiary break-all bg-bg-cell border border-border-std rounded px-2 py-1.5 mb-3">
+          {ficheUrl}
+        </div>
+
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={copyLink}
+            className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs rounded border border-border-std hover:bg-bg-light text-text-secondary"
+          >
+            <Link2 size={12} />
+            {copied ? "Lien copie" : "Copier le lien"}
+          </button>
+          <a
+            href={ficheUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs rounded bg-vinci-blue text-white hover:bg-vinci-blue/90"
+          >
+            <ExternalLink size={12} />
+            Ouvrir la fiche
+          </a>
+        </div>
+      </div>
     </div>
   );
 }

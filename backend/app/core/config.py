@@ -21,6 +21,11 @@ class Settings(BaseSettings):
     # LLM (optionnelle — V1 déterministique)
     ANTHROPIC_API_KEY: str | None = None
 
+    # Origine publique encodee dans les QR codes des fiches tableaux.
+    # Ex. l'URL du tunnel de demo, pour que le scan fonctionne depuis un
+    # telephone. Vide => on retombe sur l'origine du navigateur (front).
+    PUBLIC_BASE_URL: str = ""
+
     # CORS
     CORS_ORIGINS: list[str] = ["http://localhost:5173"]
 
