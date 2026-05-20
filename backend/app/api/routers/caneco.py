@@ -17,13 +17,19 @@ router = APIRouter(prefix="/api/projects", tags=["caneco"])
 
 
 def _check_project_access(project_id: str, db: Session, current_user: User) -> None:
-    """Vérifie que le projet existe et que l'utilisateur y a accès."""
-    project = project_repository.get_by_id(db, project_id)
-    if not project:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Projet introuvable.")
-    if current_user.role not in (UserRole.ADMIN, UserRole.RA):
-        if project.created_by != current_user.id:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Accès refusé.")
+    """Accès écriture (upload / modification CANECO) : ADMIN / RA / BE propriétaire."""
+    from app.api.access import ensure_project_access_write_studies
+
+    ensure_project_access_write_studies(db, project_id, current_user)
+
+
+def _check_project_access_read(
+    project_id: str, db: Session, current_user: User
+) -> None:
+    """Accès lecture (liste / consultation) : autorise aussi le Chef de Chantier."""
+    from app.api.access import ensure_project_access_read
+
+    ensure_project_access_read(db, project_id, current_user)
 
 
 def _get_export_or_404(export_id: str, project_id: str, db: Session) -> CanecoExport:
@@ -78,7 +84,7 @@ def list_exports(
     current_user: User = Depends(get_current_user),
 ) -> list[CanecoExportResponse]:
     """Liste tous les exports CANECO d'un projet."""
-    _check_project_access(project_id, db, current_user)
+    _check_project_access_read(project_id, db, current_user)
     exports = caneco_repository.list_for_project(db, project_id)
     return [CanecoExportResponse.model_validate(e) for e in exports]
 
@@ -97,7 +103,7 @@ def get_export_detail(
     current_user: User = Depends(get_current_user),
 ) -> CanecoExportDetail:
     """Retourne les lignes paginées d'un export CANECO, avec recherche full-text optionnelle."""
-    _check_project_access(project_id, db, current_user)
+    _check_project_access_read(project_id, db, current_user)
     export = _get_export_or_404(export_id, project_id, db)
 
     page = max(1, page)

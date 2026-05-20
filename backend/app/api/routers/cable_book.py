@@ -8,10 +8,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
+from app.api.access import ensure_project_access_read
 from app.api.deps import get_current_user, get_db
 from app.models.caneco import CanecoLine
-from app.models.user import User, UserRole
-from app.repositories import caneco_repository, project_repository
+from app.models.user import User
+from app.repositories import caneco_repository, field_entry_repository, project_repository
 from app.schemas.cable_book import (
     CableBookEntryResponse,
     CableBookReportResponse,
@@ -27,16 +28,8 @@ router = APIRouter(prefix="/api/projects", tags=["cable-book"])
 
 
 def _check_project_access(project_id: str, db: Session, current_user: User) -> None:
-    project = project_repository.get_by_id(db, project_id)
-    if not project:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Projet introuvable."
-        )
-    if current_user.role not in (UserRole.ADMIN, UserRole.RA):
-        if project.created_by != current_user.id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN, detail="Acces refuse."
-            )
+    """Lecture du carnet : autorise aussi le Chef de Chantier (base saisie Module B)."""
+    ensure_project_access_read(db, project_id, current_user)
 
 
 def _entry_to_response(entry: CableBookEntry) -> CableBookEntryResponse:
@@ -134,7 +127,10 @@ def get_cable_book_by_tableau(
     lines: list[CanecoLine] = (
         db.query(CanecoLine).filter(CanecoLine.export_id == caneco_export_id).all()
     )
-    report = build_carnet_par_tableau(lines, filter_tableau=tableau)
+    entries = field_entry_repository.list_for_export(db, caneco_export_id)
+    report = build_carnet_par_tableau(
+        lines, filter_tableau=tableau, field_entries=entries
+    )
 
     return CarnetParTableauResponse(
         tableaux=[
@@ -145,6 +141,7 @@ def get_cable_book_by_tableau(
                 longueur_totale_m=ct.longueur_totale_m,
                 departs=[
                     DepartRowResponse(
+                        caneco_line_id=d.caneco_line_id,
                         amont=d.amont,
                         repere=d.repere,
                         longueur=d.longueur,
@@ -154,6 +151,9 @@ def get_cable_book_by_tableau(
                         cable=d.cable,
                         neutre=d.neutre,
                         pe_pen=d.pe_pen,
+                        longueur_realisee=d.longueur_realisee,
+                        commentaire_chantier=d.commentaire_chantier,
+                        saisi_par=d.saisi_par,
                     )
                     for d in ct.departs
                 ],

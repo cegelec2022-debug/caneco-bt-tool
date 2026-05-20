@@ -11,12 +11,28 @@ router = APIRouter(prefix="/api/projects", tags=["projects"])
 
 
 def _get_project_or_403(project_id: str, db: Session, current_user: User) -> Project:
+    """Lecture seule. ADMIN / RA / CHEF / BE proprietaire."""
     project = project_repository.get_by_id(db, project_id)
     if not project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Projet introuvable.")
-    if current_user.role not in (UserRole.ADMIN, UserRole.RA):
-        if project.created_by != current_user.id:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Accès refusé.")
+    if current_user.role in (UserRole.ADMIN, UserRole.RA, UserRole.CHEF_CHANTIER):
+        return project
+    if project.created_by != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Accès refusé.")
+    return project
+
+
+def _get_project_or_403_write(
+    project_id: str, db: Session, current_user: User
+) -> Project:
+    """Modification / suppression : ADMIN / RA / BE proprietaire (pas le Chef)."""
+    project = project_repository.get_by_id(db, project_id)
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Projet introuvable.")
+    if current_user.role in (UserRole.ADMIN, UserRole.RA):
+        return project
+    if project.created_by != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Accès refusé.")
     return project
 
 
@@ -68,7 +84,7 @@ def update_project(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> Project:
-    project = _get_project_or_403(project_id, db, current_user)
+    project = _get_project_or_403_write(project_id, db, current_user)
     updates = payload.model_dump(exclude_unset=True)
     return project_repository.update(db, project, **updates)
 
@@ -79,5 +95,5 @@ def delete_project(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> None:
-    project = _get_project_or_403(project_id, db, current_user)
+    project = _get_project_or_403_write(project_id, db, current_user)
     project_repository.delete(db, project)

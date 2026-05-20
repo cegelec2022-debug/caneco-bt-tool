@@ -5,7 +5,10 @@ from app.models.user import UserRole
 
 
 def list_for_user(db: Session, user_id: str, role: str) -> list[Project]:
-    if role in (UserRole.ADMIN, UserRole.RA):
+    # ADMIN / RA / CHEF_CHANTIER voient tous les projets (le Chef de Chantier
+    # intervient sur n'importe quel chantier ouvert ; la gestion fine des
+    # assignations chantier est renvoyee a V2).
+    if role in (UserRole.ADMIN, UserRole.RA, UserRole.CHEF_CHANTIER):
         return db.query(Project).order_by(Project.created_at.desc()).all()
     return (
         db.query(Project)

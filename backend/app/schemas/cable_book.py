@@ -31,6 +31,7 @@ class DepartRowResponse(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+    caneco_line_id: str
     amont: str
     repere: str
     longueur: float | None
@@ -40,6 +41,10 @@ class DepartRowResponse(BaseModel):
     cable: str | None
     neutre: str | None
     pe_pen: str | None
+    # Saisie chantier (Module B)
+    longueur_realisee: float | None = None
+    commentaire_chantier: str | None = None
+    saisi_par: str | None = None
 
 
 class CarnetTableauResponse(BaseModel):

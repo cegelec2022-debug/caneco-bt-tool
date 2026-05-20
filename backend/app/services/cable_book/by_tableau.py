@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from typing import Iterable
 
 from app.models.caneco import CanecoLine
+from app.models.field_entry import FieldEntry
 from app.services.cable_book.builder import _normalize_ame
 from app.services.tableau.builder import is_tableau_style, normalize_repere
 
@@ -25,6 +26,7 @@ from app.services.tableau.builder import is_tableau_style, normalize_repere
 class DepartRow:
     """Une ligne de depart dans le carnet d'un tableau (vue PDF CANECO)."""
 
+    caneco_line_id: str
     amont: str
     repere: str
     longueur: float | None
@@ -35,6 +37,10 @@ class DepartRow:
     neutre: str | None
     pe_pen: str | None
     excel_row_number: int | None
+    # Saisie chantier (Module B) : longueur reellement tiree par le Chef
+    longueur_realisee: float | None = None
+    commentaire_chantier: str | None = None
+    saisi_par: str | None = None
 
 
 @dataclass
@@ -63,9 +69,12 @@ class CarnetParTableauReport:
     longueur_totale_m: float
 
 
-def _row_from_line(cl: CanecoLine) -> DepartRow:
+def _row_from_line(
+    cl: CanecoLine, entry: FieldEntry | None = None
+) -> DepartRow:
     """Convertit une ligne CANECO en ligne de depart pour la vue par tableau."""
     return DepartRow(
+        caneco_line_id=cl.id,
         amont=(cl.amont or "").strip(),
         repere=(cl.repere or "").strip(),
         longueur=cl.longueur,
@@ -76,6 +85,9 @@ def _row_from_line(cl: CanecoLine) -> DepartRow:
         neutre=(cl.neutre or "").strip() or None,
         pe_pen=(cl.pe or "").strip() or None,
         excel_row_number=cl.excel_row_number,
+        longueur_realisee=entry.longueur_realisee if entry else None,
+        commentaire_chantier=entry.commentaire if entry else None,
+        saisi_par=entry.saisi_par if entry else None,
     )
 
 
@@ -83,6 +95,7 @@ def build_carnet_par_tableau(
     caneco_lines: Iterable[CanecoLine],
     *,
     filter_tableau: str | None = None,
+    field_entries: Iterable[FieldEntry] | None = None,
 ) -> CarnetParTableauReport:
     """Construit le carnet de cables groupe par tableau.
 
@@ -97,6 +110,9 @@ def build_carnet_par_tableau(
         fichier source (excel_row_number).
     """
     lines = list(caneco_lines)
+    entries_by_line: dict[str, FieldEntry] = {
+        e.caneco_line_id: e for e in (field_entries or [])
+    }
 
     # Identifier les vrais tableaux (ligne CANECO de style "Tableau")
     tableau_info: dict[str, tuple[str, str | None]] = {}
@@ -122,7 +138,10 @@ def build_carnet_par_tableau(
         if needle and needle not in cle:
             continue
         rows = sorted(
-            (_row_from_line(cl) for cl in departs_par_cle[cle]),
+            (
+                _row_from_line(cl, entries_by_line.get(cl.id))
+                for cl in departs_par_cle[cle]
+            ),
             key=lambda r: (r.excel_row_number or 0, r.repere.upper()),
         )
         carnets.append(
