@@ -9,6 +9,7 @@ from app.api.routers import (
     cable_book,
     caneco,
     cps,
+    field_entry,
     projects,
     public,
     tableau,
@@ -48,6 +49,7 @@ app.include_router(cps.router)
 app.include_router(verification.router)
 app.include_router(cable_book.router)
 app.include_router(tableau.router)
+app.include_router(field_entry.router)
 app.include_router(public.router)
 
 
