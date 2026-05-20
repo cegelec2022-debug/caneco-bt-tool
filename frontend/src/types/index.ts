@@ -280,6 +280,7 @@ export interface CableBookEntry {
 // --- Carnet par tableau (style PDF CANECO) -------------------------------
 
 export interface CarnetDepartRow {
+  caneco_line_id: string;
   amont: string;
   repere: string;
   longueur: number | null;
@@ -289,6 +290,24 @@ export interface CarnetDepartRow {
   cable: string | null;
   neutre: string | null;
   pe_pen: string | null;
+  longueur_realisee?: number | null;
+  commentaire_chantier?: string | null;
+  saisi_par?: string | null;
+}
+
+export interface FieldEntry {
+  id: string;
+  caneco_line_id: string;
+  longueur_realisee: number;
+  commentaire: string | null;
+  saisi_par: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FieldEntryUpsert {
+  longueur_realisee: number;
+  commentaire?: string | null;
 }
 
 export interface CarnetTableau {

@@ -30,3 +30,21 @@
 - Mesure DACHSER indice C : 41 616 m (CANECO PDF = 41 746 m, ecart -0,31 %).
   Reconnaissance des PE au format ``nX(1xS)`` (frequent sur cables paralleles),
   supprime un parasite ``1*2 mm²`` qui faisait perdre 200+ m.
+
+### Module B — Saisie chantier (US-CC-02)
+
+- Table ``field_entries`` (modele ``FieldEntry``) : 1 saisie par ligne CANECO,
+  longueur reelle + commentaire optionnel. Migration alembic 010.
+- Endpoints ``PUT/DELETE/GET /api/projects/{id}/field-entries[/{line_id}]``
+  avec garde-fou : la ligne CANECO ciblee doit appartenir au projet.
+- Acces ouvert au role CHEF_CHANTIER sur tous les projets actifs (gestion fine
+  des assignations chantier renvoyee a V2). Aucun acces ecriture sur le
+  dossier d'etudes (upload CANECO, bordereau, CPS) pour le Chef.
+- Helper centralise ``app.api.access`` (lecture vs ecriture etudes) pour
+  factoriser le controle d'acces, deduplique les ``_check_project_access``
+  des routers concernes.
+- Front : nouvel onglet « Saisie chantier », mobile-first, base sur le
+  carnet par tableau du Module A. Champ numerique « Longueur reelle » + zone
+  commentaire repliable. Indicateur d'ecart colore (vert <= 5 %, jaune 5-10 %,
+  rouge > 10 %). KPI d'avancement.
+- 7 nouveaux tests pytest (229/229 verts).

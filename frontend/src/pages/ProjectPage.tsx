@@ -48,6 +48,7 @@ import {
   getCableBook,
   getCableBookByTableau,
 } from "@/api/cable_book";
+import { deleteFieldEntry, upsertFieldEntry } from "@/api/field_entries";
 import {
   downloadFichePdf,
   downloadLabelsPdf,
@@ -184,6 +185,7 @@ const TABS = [
   { id: "verifications", label: "Verifications" },
   { id: "cable-book", label: "Carnet cables" },
   { id: "tableaux", label: "Tableaux" },
+  { id: "saisie-chantier", label: "Saisie chantier" },
   { id: "doe", label: "DOE" },
 ] as const;
 
@@ -392,6 +394,8 @@ export default function ProjectPage() {
         {activeTab === "cable-book" && <CableBookTab projectId={id!} />}
 
         {activeTab === "tableaux" && <TableauxTab projectId={id!} />}
+
+        {activeTab === "saisie-chantier" && <SaisieChantierTab projectId={id!} />}
         {activeTab === "doe" && (
           <div className="flex-1 min-h-0 overflow-auto p-6">
             <div className="text-sm text-text-tertiary">
@@ -4394,6 +4398,384 @@ function CarnetParTableauSection({
           );
         })}
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Module B — Saisie chantier (Chef de Chantier)
+// ---------------------------------------------------------------------------
+
+function SaisieChantierTab({ projectId }: { projectId: string }) {
+  const queryClient = useQueryClient();
+  const [filter, setFilter] = useState("");
+  const [open, setOpen] = useState<Record<string, boolean>>({});
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [comments, setComments] = useState<Record<string, string>>({});
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const { data: exports } = useQuery({
+    queryKey: ["caneco", projectId],
+    queryFn: () => listCaneco(projectId),
+  });
+  const exportId = exports?.[0]?.id ?? "";
+
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ["cable-book-by-tableau", projectId, exportId],
+    queryFn: () => getCableBookByTableau(projectId, exportId),
+    enabled: !!exportId,
+  });
+
+  if (!exports || exports.length === 0) {
+    return (
+      <div className="flex-1 min-h-0 overflow-auto p-6">
+        <div className="border border-dashed border-border-std rounded p-8 text-center">
+          <p className="text-sm text-text-secondary">
+            Aucun export CANECO disponible. Importez d'abord un export pour
+            commencer la saisie chantier.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex-1 min-h-0 overflow-auto p-6">
+        <p className="text-sm text-text-tertiary">Chargement...</p>
+      </div>
+    );
+  }
+  if (isError || !data) {
+    return (
+      <div className="flex-1 min-h-0 overflow-auto p-6">
+        <p className="text-sm text-status-warn">
+          Impossible de charger le carnet par tableau.
+        </p>
+      </div>
+    );
+  }
+
+  const visible = data.tableaux.filter((t) =>
+    filter.trim() === ""
+      ? true
+      : t.repere.toUpperCase().includes(filter.toUpperCase()) ||
+        (t.designation ?? "").toUpperCase().includes(filter.toUpperCase())
+  );
+
+  // KPI global
+  const allDeparts = data.tableaux.flatMap((t) => t.departs);
+  const saisis = allDeparts.filter(
+    (d) => d.longueur_realisee !== null && d.longueur_realisee !== undefined
+  );
+  const taux = allDeparts.length === 0 ? 0 : (saisis.length / allDeparts.length) * 100;
+
+  async function save(lineId: string) {
+    setErrorMsg(null);
+    const raw = drafts[lineId];
+    if (raw === undefined || raw.trim() === "") return;
+    const val = Number(raw.replace(",", "."));
+    if (Number.isNaN(val) || val < 0) {
+      setErrorMsg("Longueur invalide. Saisir un nombre positif (en metres).");
+      return;
+    }
+    setSavingId(lineId);
+    try {
+      await upsertFieldEntry(projectId, lineId, {
+        longueur_realisee: val,
+        commentaire: comments[lineId]?.trim() || null,
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["cable-book-by-tableau", projectId, exportId],
+      });
+      setDrafts((p) => {
+        const n = { ...p };
+        delete n[lineId];
+        return n;
+      });
+      setComments((p) => {
+        const n = { ...p };
+        delete n[lineId];
+        return n;
+      });
+    } catch {
+      setErrorMsg("Echec de l'enregistrement. Verifiez votre connexion.");
+    } finally {
+      setSavingId(null);
+    }
+  }
+
+  async function clear(lineId: string) {
+    setSavingId(lineId);
+    try {
+      await deleteFieldEntry(projectId, lineId);
+      queryClient.invalidateQueries({
+        queryKey: ["cable-book-by-tableau", projectId, exportId],
+      });
+    } catch {
+      setErrorMsg("Echec de la suppression.");
+    } finally {
+      setSavingId(null);
+    }
+  }
+
+  return (
+    <div className="flex-1 min-h-0 overflow-auto p-4 sm:p-6 space-y-4">
+      <div className="bg-vinci-blue/5 border border-vinci-blue/20 rounded p-3 text-xs text-vinci-blue">
+        Saisissez la longueur reellement tiree sur chaque depart. Code couleur :
+        vert (ecart &le; 5 %), jaune (5-10 %), rouge (&gt; 10 %).
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <KpiCard
+          label="Circuits saisis"
+          value={`${saisis.length} / ${allDeparts.length}`}
+          color="text-vinci-blue"
+          bg="bg-vinci-blue/5 border-vinci-blue/20"
+        />
+        <KpiCard
+          label="Avancement"
+          value={`${taux.toFixed(0)}%`}
+          color="text-text-primary"
+          bg="bg-bg-cell border-border-std"
+        />
+        <KpiCard
+          label="Tableaux"
+          value={data.nb_tableaux}
+          color="text-text-primary"
+          bg="bg-bg-cell border-border-std"
+        />
+        <KpiCard
+          label="Circuits total"
+          value={data.nb_departs_total}
+          color="text-text-primary"
+          bg="bg-bg-cell border-border-std"
+        />
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          type="text"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          placeholder="Filtrer un tableau (TGBT, TES1...)"
+          className="text-xs border border-border-std rounded px-2 py-1.5 bg-white min-w-[200px] flex-1"
+        />
+        <button
+          type="button"
+          onClick={() =>
+            setOpen(Object.fromEntries(visible.map((t) => [t.repere, true])))
+          }
+          className="text-xs px-2 py-1.5 border border-border-std rounded hover:bg-bg-light"
+        >
+          Tout deplier
+        </button>
+        <button
+          type="button"
+          onClick={() => setOpen({})}
+          className="text-xs px-2 py-1.5 border border-border-std rounded hover:bg-bg-light"
+        >
+          Tout replier
+        </button>
+      </div>
+
+      {errorMsg && (
+        <div className="text-xs text-status-warn bg-red-50 border border-red-200 rounded px-3 py-2">
+          {errorMsg}
+        </div>
+      )}
+
+      <div className="border border-border-std rounded bg-white divide-y divide-border-std">
+        {visible.map((t) => {
+          const isOpen = open[t.repere] ?? false;
+          const tabSaisis = t.departs.filter(
+            (d) => d.longueur_realisee !== null && d.longueur_realisee !== undefined
+          ).length;
+          return (
+            <div key={t.repere}>
+              <button
+                type="button"
+                onClick={() =>
+                  setOpen((prev) => ({ ...prev, [t.repere]: !isOpen }))
+                }
+                className="w-full flex items-center gap-3 px-3 sm:px-4 py-2.5 text-left hover:bg-bg-light"
+              >
+                <span className="text-vinci-blue font-semibold text-sm shrink-0 w-28 sm:w-32 truncate">
+                  {t.repere}
+                </span>
+                <span className="text-xs text-text-secondary truncate hidden sm:block flex-1">
+                  {t.designation ?? "—"}
+                </span>
+                <span className="ml-auto text-xs text-text-tertiary">
+                  {tabSaisis} / {t.nb_departs} saisis
+                </span>
+                <ChevronRight
+                  size={14}
+                  className={cn(
+                    "text-text-tertiary transition-transform shrink-0",
+                    isOpen && "rotate-90"
+                  )}
+                />
+              </button>
+
+              {isOpen && (
+                <div className="border-t border-border-std bg-bg-cell divide-y divide-border-std">
+                  {t.departs.map((d) => (
+                    <DepartSaisieRow
+                      key={d.caneco_line_id}
+                      depart={d}
+                      draftVal={drafts[d.caneco_line_id] ?? ""}
+                      commentVal={comments[d.caneco_line_id] ?? ""}
+                      onDraftChange={(v) =>
+                        setDrafts((p) => ({ ...p, [d.caneco_line_id]: v }))
+                      }
+                      onCommentChange={(v) =>
+                        setComments((p) => ({ ...p, [d.caneco_line_id]: v }))
+                      }
+                      onSave={() => save(d.caneco_line_id)}
+                      onClear={() => clear(d.caneco_line_id)}
+                      saving={savingId === d.caneco_line_id}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function DepartSaisieRow({
+  depart,
+  draftVal,
+  commentVal,
+  onDraftChange,
+  onCommentChange,
+  onSave,
+  onClear,
+  saving,
+}: {
+  depart: import("@/types").CarnetDepartRow;
+  draftVal: string;
+  commentVal: string;
+  onDraftChange: (v: string) => void;
+  onCommentChange: (v: string) => void;
+  onSave: () => void;
+  onClear: () => void;
+  saving: boolean;
+}) {
+  const prev = depart.longueur;
+  const real = depart.longueur_realisee;
+  const ecart =
+    real != null && prev != null && prev > 0
+      ? ((real - prev) / prev) * 100
+      : null;
+  const ecartColor =
+    ecart == null
+      ? "text-text-tertiary"
+      : Math.abs(ecart) <= 5
+      ? "text-green-700 bg-green-50"
+      : Math.abs(ecart) <= 10
+      ? "text-yellow-800 bg-yellow-50"
+      : "text-status-warn bg-red-50";
+
+  const [showComment, setShowComment] = useState(
+    Boolean(depart.commentaire_chantier)
+  );
+
+  return (
+    <div className="px-3 sm:px-4 py-3 bg-white">
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <span className="font-mono font-medium text-text-primary truncate min-w-[100px] flex-1">
+          {depart.repere || "—"}
+        </span>
+        <span className="text-text-tertiary text-[11px]">
+          {depart.cable ?? "—"} · {depart.ame || "—"}
+        </span>
+        <span className="ml-auto text-text-secondary">
+          Prevu :{" "}
+          <span className="font-medium text-text-primary">
+            {prev == null ? "—" : `${formatMeters(prev)} m`}
+          </span>
+        </span>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 mt-2">
+        <label className="text-[11px] text-text-tertiary shrink-0">
+          Reel
+        </label>
+        <input
+          type="number"
+          inputMode="decimal"
+          step="0.1"
+          min="0"
+          value={draftVal !== "" ? draftVal : real != null ? String(real) : ""}
+          onChange={(e) => onDraftChange(e.target.value)}
+          placeholder={real != null ? String(real) : "—"}
+          className="border border-border-std rounded px-2 py-1.5 text-sm w-24 focus:outline-none focus:ring-2 focus:ring-vinci-blue/30"
+        />
+        <span className="text-xs text-text-tertiary">m</span>
+
+        {ecart != null && draftVal === "" && (
+          <span
+            className={cn(
+              "text-[11px] font-medium px-2 py-0.5 rounded",
+              ecartColor
+            )}
+          >
+            {ecart > 0 ? "+" : ""}
+            {ecart.toFixed(1)}%
+          </span>
+        )}
+
+        <button
+          type="button"
+          onClick={() => setShowComment((v) => !v)}
+          className="text-[11px] text-vinci-blue hover:underline ml-auto"
+        >
+          {showComment ? "Masquer commentaire" : "Ajouter commentaire"}
+        </button>
+
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={saving || draftVal === ""}
+          className={cn(
+            "px-3 py-1.5 text-xs rounded bg-vinci-blue text-white",
+            "hover:bg-vinci-blue/90 disabled:opacity-50 disabled:cursor-not-allowed"
+          )}
+        >
+          {saving ? "..." : real != null ? "Mettre a jour" : "Enregistrer"}
+        </button>
+        {real != null && (
+          <button
+            type="button"
+            onClick={onClear}
+            disabled={saving}
+            title="Effacer la saisie"
+            className="px-2 py-1.5 text-xs rounded border border-border-std text-text-tertiary hover:text-status-warn hover:border-red-300"
+          >
+            <X size={12} />
+          </button>
+        )}
+      </div>
+
+      {showComment && (
+        <textarea
+          value={
+            commentVal !== ""
+              ? commentVal
+              : depart.commentaire_chantier ?? ""
+          }
+          onChange={(e) => onCommentChange(e.target.value)}
+          placeholder="Justification (passage detourne, IPN, reserve...)"
+          className="mt-2 w-full border border-border-std rounded px-2 py-1.5 text-xs resize-y min-h-[40px] focus:outline-none focus:ring-2 focus:ring-vinci-blue/30"
+          rows={2}
+        />
+      )}
     </div>
   );
 }
