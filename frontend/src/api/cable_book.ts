@@ -1,4 +1,4 @@
-import type { CableBookReport } from "@/types";
+import type { CableBookReport, CarnetParTableau } from "@/types";
 import api from "./client";
 
 export async function getCableBook(
@@ -10,6 +10,20 @@ export async function getCableBook(
   if (filterRepereAval) params.set("repere_aval", filterRepereAval);
   const { data } = await api.get<CableBookReport>(
     `/projects/${projectId}/cable-book?${params.toString()}`
+  );
+  return data;
+}
+
+/** Carnet par tableau (style PDF CANECO). */
+export async function getCableBookByTableau(
+  projectId: string,
+  canecoExportId: string,
+  filterTableau?: string
+): Promise<CarnetParTableau> {
+  const params = new URLSearchParams({ caneco_export_id: canecoExportId });
+  if (filterTableau) params.set("tableau", filterTableau);
+  const { data } = await api.get<CarnetParTableau>(
+    `/projects/${projectId}/cable-book/by-tableau?${params.toString()}`
   );
   return data;
 }

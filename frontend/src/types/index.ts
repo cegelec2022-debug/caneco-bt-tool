@@ -277,6 +277,35 @@ export interface CableBookEntry {
   ame?: string;
 }
 
+// --- Carnet par tableau (style PDF CANECO) -------------------------------
+
+export interface CarnetDepartRow {
+  amont: string;
+  repere: string;
+  longueur: number | null;
+  type_cable: string | null;
+  ame: string;
+  nb_cables_multi: number | null;
+  cable: string | null;
+  neutre: string | null;
+  pe_pen: string | null;
+}
+
+export interface CarnetTableau {
+  repere: string;
+  designation: string | null;
+  nb_departs: number;
+  longueur_totale_m: number;
+  departs: CarnetDepartRow[];
+}
+
+export interface CarnetParTableau {
+  tableaux: CarnetTableau[];
+  nb_tableaux: number;
+  nb_departs_total: number;
+  longueur_totale_m: number;
+}
+
 export interface CableBookReport {
   entries: CableBookEntry[];
   longueur_totale_projet_m: number;

@@ -12,8 +12,15 @@ from app.api.deps import get_current_user, get_db
 from app.models.caneco import CanecoLine
 from app.models.user import User, UserRole
 from app.repositories import caneco_repository, project_repository
-from app.schemas.cable_book import CableBookEntryResponse, CableBookReportResponse
+from app.schemas.cable_book import (
+    CableBookEntryResponse,
+    CableBookReportResponse,
+    CarnetParTableauResponse,
+    CarnetTableauResponse,
+    DepartRowResponse,
+)
 from app.services.cable_book.builder import CableBookEntry, build_cable_book
+from app.services.cable_book.by_tableau import build_carnet_par_tableau
 from app.services.cable_book.excel_exporter import build_cable_book_workbook
 
 router = APIRouter(prefix="/api/projects", tags=["cable-book"])
@@ -91,6 +98,71 @@ def get_cable_book(
             k: round(v, 2) for k, v in report.longueur_par_aval.items()
         },
         top5=[_entry_to_response(e) for e in report.top5],
+    )
+
+
+@router.get(
+    "/{project_id}/cable-book/by-tableau",
+    response_model=CarnetParTableauResponse,
+)
+def get_cable_book_by_tableau(
+    project_id: str,
+    caneco_export_id: str = Query(..., description="ID de l'export CANECO source"),
+    tableau: str | None = Query(
+        None,
+        description="Filtre optionnel : ne garde que les tableaux dont le repere "
+        "contient cette chaine",
+    ),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> CarnetParTableauResponse:
+    """Carnet de cables groupe par tableau (style PDF CANECO BT).
+
+    Pour chaque tableau electrique du projet, retourne la liste de ses departs
+    avec les colonnes officielles CANECO (Amont, Repere, Longueur, Type de
+    cable, Ame, Nb cables multi, Cable, Neutre, PE ou PEN).
+    """
+    _check_project_access(project_id, db, current_user)
+
+    export = caneco_repository.get_export(db, caneco_export_id)
+    if not export or export.project_id != project_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Export CANECO introuvable pour ce projet.",
+        )
+
+    lines: list[CanecoLine] = (
+        db.query(CanecoLine).filter(CanecoLine.export_id == caneco_export_id).all()
+    )
+    report = build_carnet_par_tableau(lines, filter_tableau=tableau)
+
+    return CarnetParTableauResponse(
+        tableaux=[
+            CarnetTableauResponse(
+                repere=ct.repere,
+                designation=ct.designation,
+                nb_departs=ct.nb_departs,
+                longueur_totale_m=ct.longueur_totale_m,
+                departs=[
+                    DepartRowResponse(
+                        amont=d.amont,
+                        repere=d.repere,
+                        longueur=d.longueur,
+                        type_cable=d.type_cable,
+                        ame=d.ame,
+                        nb_cables_multi=d.nb_cables_multi,
+                        cable=d.cable,
+                        neutre=d.neutre,
+                        pe_pen=d.pe_pen,
+                    )
+                    for d in ct.departs
+                ],
+            )
+            for ct in report.tableaux
+        ],
+        nb_tableaux=report.nb_tableaux,
+        nb_departs_total=report.nb_departs_total,
+        longueur_totale_m=report.longueur_totale_m,
     )
 
 

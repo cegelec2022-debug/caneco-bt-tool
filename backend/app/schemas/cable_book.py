@@ -23,6 +23,46 @@ class CableBookEntryResponse(BaseModel):
     ame: str = ""              # "Cuivre" / "Alu" / ""
 
 
+# --- Carnet par tableau (vue PDF CANECO) ----------------------------------
+
+
+class DepartRowResponse(BaseModel):
+    """Une ligne de depart dans le carnet d'un tableau (style PDF CANECO)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    amont: str
+    repere: str
+    longueur: float | None
+    type_cable: str | None
+    ame: str
+    nb_cables_multi: int | None
+    cable: str | None
+    neutre: str | None
+    pe_pen: str | None
+
+
+class CarnetTableauResponse(BaseModel):
+    """Carnet de cables d'un tableau (en-tete + departs)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    repere: str
+    designation: str | None
+    nb_departs: int
+    longueur_totale_m: float
+    departs: list[DepartRowResponse]
+
+
+class CarnetParTableauResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    tableaux: list[CarnetTableauResponse]
+    nb_tableaux: int
+    nb_departs_total: int
+    longueur_totale_m: float
+
+
 class CableBookReportResponse(BaseModel):
     """Carnet de cables complet : sommaire + rapport synthetique."""
 

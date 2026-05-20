@@ -43,7 +43,11 @@ import {
   updateBordereauIndice,
   uploadBordereau,
 } from "@/api/bordereau";
-import { downloadCableBookExcel, getCableBook } from "@/api/cable_book";
+import {
+  downloadCableBookExcel,
+  getCableBook,
+  getCableBookByTableau,
+} from "@/api/cable_book";
 import {
   downloadFichePdf,
   downloadLabelsPdf,
@@ -4186,8 +4190,210 @@ function CableBookTab({ projectId }: { projectId: string }) {
               </div>
             </div>
           )}
+
+          {/* Vue par tableau (format PDF CANECO) */}
+          {effectiveExportId && (
+            <CarnetParTableauSection
+              projectId={projectId}
+              canecoExportId={effectiveExportId}
+            />
+          )}
         </>
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Carnet par tableau (vue PDF CANECO)
+// ---------------------------------------------------------------------------
+
+function CarnetParTableauSection({
+  projectId,
+  canecoExportId,
+}: {
+  projectId: string;
+  canecoExportId: string;
+}) {
+  const [filter, setFilter] = useState("");
+  const [open, setOpen] = useState<Record<string, boolean>>({});
+
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ["cable-book-by-tableau", projectId, canecoExportId],
+    queryFn: () => getCableBookByTableau(projectId, canecoExportId),
+    enabled: !!canecoExportId,
+  });
+
+  if (isLoading) {
+    return (
+      <div className="border border-border-std rounded p-4 bg-white">
+        <p className="text-sm text-text-tertiary">Chargement du carnet par tableau...</p>
+      </div>
+    );
+  }
+  if (isError || !data) {
+    return (
+      <div className="border border-border-std rounded p-4 bg-white">
+        <p className="text-sm text-status-warn">
+          Impossible de charger le carnet par tableau.
+        </p>
+      </div>
+    );
+  }
+
+  const visible = data.tableaux.filter((t) =>
+    filter.trim() === ""
+      ? true
+      : t.repere.toUpperCase().includes(filter.toUpperCase()) ||
+        (t.designation ?? "").toUpperCase().includes(filter.toUpperCase())
+  );
+
+  return (
+    <div className="border border-border-std rounded bg-white">
+      <div className="px-4 py-2 bg-bg-cell border-b border-border-std flex flex-wrap items-center gap-3">
+        <h4 className="text-xs font-semibold text-text-tertiary uppercase tracking-wide">
+          Carnet par tableau ({data.nb_tableaux} tableaux ·{" "}
+          {data.nb_departs_total} circuits)
+        </h4>
+        <input
+          type="text"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          placeholder="Filtrer un tableau (TGBT, TES1...)"
+          className="ml-auto text-xs border border-border-std rounded px-2 py-1 bg-white min-w-[200px]"
+        />
+        <button
+          type="button"
+          onClick={() =>
+            setOpen(
+              Object.fromEntries(visible.map((t) => [t.repere, true]))
+            )
+          }
+          className="text-xs px-2 py-1 border border-border-std rounded hover:bg-bg-light"
+        >
+          Tout deplier
+        </button>
+        <button
+          type="button"
+          onClick={() => setOpen({})}
+          className="text-xs px-2 py-1 border border-border-std rounded hover:bg-bg-light"
+        >
+          Tout replier
+        </button>
+      </div>
+
+      <div className="divide-y divide-border-std">
+        {visible.map((t) => {
+          const isOpen = open[t.repere] ?? false;
+          return (
+            <div key={t.repere}>
+              <button
+                type="button"
+                onClick={() =>
+                  setOpen((prev) => ({ ...prev, [t.repere]: !isOpen }))
+                }
+                className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-bg-light"
+              >
+                <span className="text-vinci-blue font-semibold text-sm shrink-0 w-32">
+                  {t.repere}
+                </span>
+                <span className="text-xs text-text-secondary truncate flex-1">
+                  {t.designation ?? "—"}
+                </span>
+                <span className="text-xs text-text-tertiary">
+                  {t.nb_departs} circuits
+                </span>
+                <span className="text-xs text-text-primary font-medium w-24 text-right">
+                  {formatMeters(t.longueur_totale_m)} m
+                </span>
+                <ChevronRight
+                  size={14}
+                  className={cn(
+                    "text-text-tertiary transition-transform",
+                    isOpen && "rotate-90"
+                  )}
+                />
+              </button>
+
+              {isOpen && (
+                <div className="overflow-x-auto bg-bg-cell border-t border-border-std">
+                  <table className="w-full text-xs">
+                    <thead style={{ backgroundColor: "#001E50" }}>
+                      <tr>
+                        <th className="px-3 py-1.5 text-left font-medium text-white/90">
+                          Amont
+                        </th>
+                        <th className="px-3 py-1.5 text-left font-medium text-white/90">
+                          Repere
+                        </th>
+                        <th className="px-3 py-1.5 text-right font-medium text-white/90 w-[80px]">
+                          Long. (m)
+                        </th>
+                        <th className="px-3 py-1.5 text-left font-medium text-white/90">
+                          Type de cable
+                        </th>
+                        <th className="px-3 py-1.5 text-left font-medium text-white/90 w-[60px]">
+                          Ame
+                        </th>
+                        <th className="px-3 py-1.5 text-right font-medium text-white/90 w-[80px]">
+                          Nb cables multi
+                        </th>
+                        <th className="px-3 py-1.5 text-left font-medium text-white/90">
+                          Cable
+                        </th>
+                        <th className="px-3 py-1.5 text-left font-medium text-white/90">
+                          Neutre
+                        </th>
+                        <th className="px-3 py-1.5 text-left font-medium text-white/90">
+                          PE ou PEN
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {t.departs.map((d, i) => (
+                        <tr
+                          key={`${t.repere}-${i}`}
+                          className={i % 2 === 0 ? "bg-white" : "bg-bg-light"}
+                        >
+                          <td className="px-3 py-1 font-mono text-text-secondary">
+                            {d.amont || "—"}
+                          </td>
+                          <td className="px-3 py-1 font-mono text-text-primary">
+                            {d.repere || "—"}
+                          </td>
+                          <td className="px-3 py-1 text-right text-text-primary">
+                            {d.longueur == null
+                              ? "—"
+                              : `${formatMeters(d.longueur)}`}
+                          </td>
+                          <td className="px-3 py-1 text-text-secondary">
+                            {d.type_cable || "—"}
+                          </td>
+                          <td className="px-3 py-1 text-text-secondary">
+                            {d.ame || "—"}
+                          </td>
+                          <td className="px-3 py-1 text-right text-text-secondary">
+                            {d.nb_cables_multi ?? "—"}
+                          </td>
+                          <td className="px-3 py-1 font-mono text-text-secondary">
+                            {d.cable || "—"}
+                          </td>
+                          <td className="px-3 py-1 font-mono text-text-tertiary">
+                            {d.neutre || "—"}
+                          </td>
+                          <td className="px-3 py-1 font-mono text-text-tertiary">
+                            {d.pe_pen || "—"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
