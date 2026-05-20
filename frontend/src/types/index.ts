@@ -274,6 +274,7 @@ export interface CableBookEntry {
   pourcentage_du_total: number;
   reperes_aval: string[];
   longueurs_par_aval: Record<string, number>;
+  ame?: string;
 }
 
 export interface CableBookReport {

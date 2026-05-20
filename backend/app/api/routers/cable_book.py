@@ -45,6 +45,7 @@ def _entry_to_response(entry: CableBookEntry) -> CableBookEntryResponse:
         pourcentage_du_total=round(entry.pourcentage_du_total, 2),
         reperes_aval=sorted(entry.reperes_aval),
         longueurs_par_aval={k: round(v, 2) for k, v in entry.longueurs_par_aval.items()},
+        ame=entry.ame,
     )
 
 

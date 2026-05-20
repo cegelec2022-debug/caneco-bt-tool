@@ -6,12 +6,12 @@ from pydantic import BaseModel, ConfigDict
 
 
 class CableBookEntryResponse(BaseModel):
-    """Une ligne du sommaire du carnet."""
+    """Une ligne du sommaire du carnet (methode CANECO : par section + ame)."""
 
     model_config = ConfigDict(from_attributes=True)
 
     type_cable: str
-    cable_caneco: str
+    cable_caneco: str          # ex. "3G2,5" ou "1*240 mm²"
     section_mm2: float | None
     nb_conducteurs: int
     nb_circuits_paralleles: int
@@ -20,6 +20,7 @@ class CableBookEntryResponse(BaseModel):
     pourcentage_du_total: float
     reperes_aval: list[str]
     longueurs_par_aval: dict[str, float]
+    ame: str = ""              # "Cuivre" / "Alu" / ""
 
 
 class CableBookReportResponse(BaseModel):

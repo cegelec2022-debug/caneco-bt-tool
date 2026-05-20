@@ -44,6 +44,7 @@ def make_line(
     cl.longueur = longueur
     cl.nb_cables_multi = nb_cables_multi
     cl.style = style
+    cl.ame = "1"  # 1 = Cuivre dans l'export CANECO
     return cl
 
 
@@ -113,24 +114,61 @@ def test_build_cable_book_aggregates_by_type_and_cable() -> None:
 
 
 def test_build_cable_book_multi_cable_paralleles_multiplies_length() -> None:
-    """Pour 3X(1x150), la longueur totale = longueur × 3 (3 cables unipolaires)."""
+    """`3X(1x150)` se decompose en 3 conducteurs unipolaires section 150 mm²."""
     lines = [
         make_line(type_cable="U1000R2V", cable="3X(1x150)", longueur=100.0),
     ]
     report = build_cable_book(lines)
     assert len(report.entries) == 1
-    # 100m × 3 cables unipolaires en parallele = 300m
+    # Format CANECO : etiquette = "1*150 mm²", longueur = 100 × 3 = 300 m
+    assert report.entries[0].cable_caneco == "1*150 mm²"
     assert report.entries[0].longueur_totale_m == 300.0
-    assert report.entries[0].nb_circuits_paralleles == 3
+    assert report.entries[0].section_mm2 == 150.0
 
 
-def test_build_cable_book_nb_cables_multi_multiplies() -> None:
-    """nb_cables_multi de CANECO est aussi pris en compte."""
+def test_build_cable_book_compte_neutre_et_pe_comme_unipolaires() -> None:
+    """Methode CANECO : Neutre et PE/PEN sont des cables unipolaires distincts."""
+    # 10 m d'un 4X(1x300) avec neutre 1x240 et PE 1x150
+    lines = [
+        make_line(
+            type_cable="U1000R2V",
+            cable="4X(1x300)",
+            neutre="1x240",
+            pe="1x150",
+            longueur=10.0,
+        ),
+    ]
+    report = build_cable_book(lines)
+    by_section = {e.cable_caneco: e.longueur_totale_m for e in report.entries}
+    assert by_section["1*300 mm²"] == 40.0   # 4 cables x 10 m
+    assert by_section["1*240 mm²"] == 10.0   # neutre
+    assert by_section["1*150 mm²"] == 10.0   # PE
+
+
+def test_build_cable_book_nb_cables_multi_multipolaire() -> None:
+    """Pour un multipolaire, nb_cables_multi multiplie la longueur (cables paralleles)."""
     lines = [
         make_line(type_cable="U1000R2V", cable="5G6", longueur=10.0, nb_cables_multi=2),
     ]
     report = build_cable_book(lines)
     assert report.entries[0].longueur_totale_m == 20.0  # 10m × 2 cables
+
+
+def test_build_cable_book_ncm_unipolaire_pas_double_compte() -> None:
+    """Pour `2X3X(1x240)` ncm=2, le `2X` est deja dans la notation : on n'applique
+    PAS `nb_cables_multi` en plus, sinon double comptage vs CANECO BT."""
+    # 100 m de 2X3X(1x240) => 2*3 = 6 conducteurs unipolaires, longueur = 600 m
+    lines = [
+        make_line(
+            type_cable="U1000AR2V",
+            cable="2X3X(1x240)",
+            longueur=100.0,
+            nb_cables_multi=2,
+        ),
+    ]
+    report = build_cable_book(lines)
+    assert report.entries[0].cable_caneco == "1*240 mm²"
+    assert report.entries[0].longueur_totale_m == 600.0
 
 
 def test_build_cable_book_percentage_sums_to_100() -> None:
