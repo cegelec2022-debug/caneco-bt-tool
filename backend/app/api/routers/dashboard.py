@@ -22,10 +22,10 @@ from app.api.deps import get_current_user, get_db
 from app.models.caneco import CanecoExport, CanecoLine
 from app.models.field_entry import FieldEntry
 from app.models.project import Project
-from app.models.tableau import Tableau
 from app.models.user import User, UserRole
 from app.models.verification import Gap, VerificationRun
 from app.services.cable_stock.service import list_stock
+from app.services.project_metrics import compute_project_metrics
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 
@@ -88,22 +88,10 @@ def _build_project_summary(db: Session, project: Project) -> ProjectSummary:
     """Agrege les indicateurs cles d'un projet pour le tableau de bord RA."""
     export = _latest_export(db, project.id)
 
-    nb_tableaux = (
-        db.query(func.count(Tableau.id))
-        .filter(Tableau.project_id == project.id)
-        .scalar()
-        or 0
-    )
-
-    # Circuits (lignes CANECO non-tableaux) du dernier export
+    # Charge les lignes CANECO du dernier export + les saisies chantier
     lines: list[CanecoLine] = []
     if export:
         lines = db.query(CanecoLine).filter(CanecoLine.export_id == export.id).all()
-    nb_circuits = sum(
-        1 for cl in lines if (cl.style or "").strip().lower() != "tableau" and cl.cable
-    )
-
-    # Saisies chantier sur ces lignes
     line_ids = [cl.id for cl in lines]
     entries: list[FieldEntry] = []
     if line_ids:
@@ -112,19 +100,16 @@ def _build_project_summary(db: Session, project: Project) -> ProjectSummary:
             .filter(FieldEntry.caneco_line_id.in_(line_ids))
             .all()
         )
-    nb_saisis = len(entries)
-    avancement = (nb_saisis / nb_circuits * 100.0) if nb_circuits > 0 else 0.0
 
-    # Longueurs prevue vs realisee (somme brute, indicatif)
-    entries_by_line = {e.caneco_line_id: e for e in entries}
-    long_prevue = 0.0
-    long_realisee = 0.0
-    for cl in lines:
-        if (cl.style or "").strip().lower() == "tableau" or not cl.cable:
-            continue
-        long_prevue += float(cl.longueur or 0.0)
-        e = entries_by_line.get(cl.id)
-        long_realisee += float(e.longueur_realisee if e else 0.0)
+    # Indicateurs de chantier : SOURCE UNIQUE partagee avec tous les autres
+    # ecrans (Tableaux, Saisie chantier...) pour garantir la coherence.
+    metrics = compute_project_metrics(lines, entries)
+    nb_tableaux = metrics.nb_tableaux
+    nb_circuits = metrics.nb_circuits
+    nb_saisis = metrics.nb_circuits_saisis
+    avancement = metrics.avancement_pct
+    long_prevue = metrics.longueur_prevue_m
+    long_realisee = metrics.longueur_realisee_m
 
     # Ecarts ouverts (status != 'leve') sur la derniere verification du projet
     last_run = (

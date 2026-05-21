@@ -54,6 +54,7 @@ import {
   getCableStock,
   upsertCableStock,
 } from "@/api/cable_stock";
+import { getProjectMetrics } from "@/api/project_metrics";
 import {
   downloadFichePdf,
   downloadLabelsPdf,
@@ -3628,8 +3629,14 @@ function TableauxTab({ projectId }: { projectId: string }) {
   }
 
   const list = tableaux ?? [];
-  const totalDeparts = list.reduce((s, t) => s + t.nb_departs, 0);
-  const totalLongueur = list.reduce((s, t) => s + t.longueur_totale_m, 0);
+  // Source unique : KPI projet via /api/projects/{id}/metrics, partages
+  // avec la Saisie chantier et le Dashboard RA pour garantir la coherence.
+  const { data: metrics } = useQuery({
+    queryKey: ["project-metrics", projectId],
+    queryFn: () => getProjectMetrics(projectId),
+  });
+  const totalDeparts = metrics?.nb_circuits ?? 0;
+  const totalLongueur = metrics?.longueur_prevue_m ?? 0;
 
   return (
     <div className="flex-1 min-h-0 overflow-auto p-6 space-y-5">
@@ -4496,12 +4503,16 @@ function SaisieChantierTab({ projectId }: { projectId: string }) {
         (t.designation ?? "").toUpperCase().includes(filter.toUpperCase())
   );
 
-  // KPI global
+  // KPI global — source unique partagee avec Tableaux et Dashboard RA
+  const { data: metrics } = useQuery({
+    queryKey: ["project-metrics", projectId],
+    queryFn: () => getProjectMetrics(projectId),
+  });
   const allDeparts = data.tableaux.flatMap((t) => t.departs);
   const saisis = allDeparts.filter(
     (d) => d.longueur_realisee !== null && d.longueur_realisee !== undefined
   );
-  const taux = allDeparts.length === 0 ? 0 : (saisis.length / allDeparts.length) * 100;
+  const taux = metrics?.avancement_pct ?? 0;
 
   async function save(lineId: string) {
     setErrorMsg(null);
@@ -4562,7 +4573,9 @@ function SaisieChantierTab({ projectId }: { projectId: string }) {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <KpiCard
           label="Circuits saisis"
-          value={`${saisis.length} / ${allDeparts.length}`}
+          value={`${metrics?.nb_circuits_saisis ?? saisis.length} / ${
+            metrics?.nb_circuits ?? allDeparts.length
+          }`}
           color="text-vinci-blue"
           bg="bg-vinci-blue/5 border-vinci-blue/20"
         />
@@ -4574,13 +4587,13 @@ function SaisieChantierTab({ projectId }: { projectId: string }) {
         />
         <KpiCard
           label="Tableaux"
-          value={data.nb_tableaux}
+          value={metrics?.nb_tableaux ?? data.nb_tableaux}
           color="text-text-primary"
           bg="bg-bg-cell border-border-std"
         />
         <KpiCard
           label="Circuits total"
-          value={data.nb_departs_total}
+          value={metrics?.nb_circuits ?? data.nb_departs_total}
           color="text-text-primary"
           bg="bg-bg-cell border-border-std"
         />

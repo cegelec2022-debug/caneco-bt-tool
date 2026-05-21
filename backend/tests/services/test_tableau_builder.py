@@ -65,16 +65,28 @@ def test_dedoublonnage_des_lignes_en_double():
 
 
 def test_compte_des_circuits_alimentes():
+    # Pour la longueur, on utilise des cables multipolaires simples (1 contrib
+    # methode CANECO = longueur brute). Une ligne avec amont != tableau du
+    # projet est exclue.
     lines = [
         make_line(repere="TES1", amont="TGBT", style="Tableau"),
-        make_line(repere="C1", amont="TES1", style="Eclairage", longueur=10.0),
-        make_line(repere="C2", amont="TES1", style="PC", longueur=5.0),
-        make_line(repere="C3", amont="AUTRE", style="PC", longueur=99.0),
+        make_line(
+            repere="C1", amont="TES1", style="Eclairage",
+            longueur=10.0, cable="5G6", nb_cables_multi=1,
+        ),
+        make_line(
+            repere="C2", amont="TES1", style="PC",
+            longueur=5.0, cable="3G2,5", nb_cables_multi=1,
+        ),
+        make_line(
+            repere="C3", amont="AUTRE", style="PC",
+            longueur=99.0, cable="5G6", nb_cables_multi=1,
+        ),
     ]
     t = derive_tableaux(lines)[0]
     assert t.repere == "TES1"
     assert t.nb_departs == 2
-    assert t.longueur_totale_m == 15.0
+    assert t.longueur_totale_m == 15.0  # 10 + 5 (cables multipolaires => brut)
 
 
 def test_sections_fiche_completes():

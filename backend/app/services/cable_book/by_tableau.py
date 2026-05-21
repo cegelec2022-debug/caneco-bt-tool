@@ -18,8 +18,8 @@ from typing import Iterable
 
 from app.models.caneco import CanecoLine
 from app.models.field_entry import FieldEntry
-from app.services.cable_book.builder import _normalize_ame
-from app.services.tableau.builder import is_tableau_style, normalize_repere
+from app.services.cable_book.builder import _contributions_for_line, _normalize_ame
+from app.services.tableau.builder import _dedupe, is_tableau_style, normalize_repere
 
 
 @dataclass
@@ -55,10 +55,7 @@ class CarnetTableau:
     def nb_departs(self) -> int:
         return len(self.departs)
 
-    @property
-    def longueur_totale_m(self) -> float:
-        """Somme des longueurs brutes des departs (vue tableau, pas conducteurs)."""
-        return round(sum((d.longueur or 0.0) for d in self.departs), 2)
+    longueur_totale_m: float = 0.0  # methode CANECO (decomposition conducteurs)
 
 
 @dataclass
@@ -109,7 +106,9 @@ def build_carnet_par_tableau(
         par repere. Pour chaque tableau, ses departs sont dans l'ordre du
         fichier source (excel_row_number).
     """
-    lines = list(caneco_lines)
+    # Dedoublonnage applique des l'entree pour rester aligne avec les autres
+    # vues (onglet Tableaux, dashboard, etc.) — source unique de comptage.
+    lines = _dedupe(caneco_lines)
     entries_by_line: dict[str, FieldEntry] = {
         e.caneco_line_id: e for e in (field_entries or [])
     }
@@ -125,9 +124,14 @@ def build_carnet_par_tableau(
                     (cl.designation or "").strip() or None,
                 )
 
-    # Regrouper les lignes par tableau amont (le tableau qui les alimente)
+    # Regrouper les CIRCUITS (lignes non-tableau) par tableau amont. Les
+    # sous-tableaux (style=Tableau, amont=autre tableau) ne sont PAS comptes
+    # comme circuits : ils sont deja representes en tant que tableaux dans la
+    # liste ci-dessus.
     departs_par_cle: dict[str, list[CanecoLine]] = {cle: [] for cle in tableau_info}
     for cl in lines:
+        if is_tableau_style(cl.style):
+            continue
         cle = normalize_repere(cl.amont)
         if cle in tableau_info:
             departs_par_cle[cle].append(cl)
@@ -137,15 +141,22 @@ def build_carnet_par_tableau(
     for cle, (repere, designation) in tableau_info.items():
         if needle and needle not in cle:
             continue
+        deps_lines = departs_par_cle[cle]
         rows = sorted(
-            (
-                _row_from_line(cl, entries_by_line.get(cl.id))
-                for cl in departs_par_cle[cle]
-            ),
+            (_row_from_line(cl, entries_by_line.get(cl.id)) for cl in deps_lines),
             key=lambda r: (r.excel_row_number or 0, r.repere.upper()),
         )
+        longueur_caneco = round(
+            sum(c.longueur for d in deps_lines for c in _contributions_for_line(d)),
+            2,
+        )
         carnets.append(
-            CarnetTableau(repere=repere, designation=designation, departs=rows)
+            CarnetTableau(
+                repere=repere,
+                designation=designation,
+                departs=rows,
+                longueur_totale_m=longueur_caneco,
+            )
         )
 
     carnets.sort(key=lambda c: c.repere.upper())

@@ -54,15 +54,22 @@ def test_dashboard_summary_par_projet(client, db, admin_headers):
     db.commit()
     db.refresh(exp)
 
-    # 4 circuits, 1 ligne tableau (ignore)
+    # 4 circuits + 1 tableau (ignore comme circuit). Pour qu'un circuit
+    # compte, son amont doit etre un tableau reel du projet -> le tableau
+    # cible porte le repere "TGBT" et les circuits ont amont="TGBT".
     lines = []
-    for i, (style, cable) in enumerate(
-        [("Tableau", None), ("Eclairage", "5G6"), ("PC", "3G2,5"), ("PC", "3G2,5"), ("PC", "3G2,5")]
-    ):
+    rows = [
+        ("Tableau", None, "TGBT"),
+        ("Eclairage", "5G6", "C1"),
+        ("PC", "3G2,5", "C2"),
+        ("PC", "3G2,5", "C3"),
+        ("PC", "3G2,5", "C4"),
+    ]
+    for i, (style, cable, repere) in enumerate(rows):
         cl = CanecoLine(
             export_id=exp.id,
             row_index=i + 1,
-            repere=f"R{i}",
+            repere=repere,
             amont="TGBT",
             style=style,
             longueur=10.0,

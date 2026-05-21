@@ -12,6 +12,7 @@ from app.api.routers import (
     cps,
     dashboard,
     field_entry,
+    project_metrics,
     projects,
     public,
     tableau,
@@ -54,6 +55,7 @@ app.include_router(tableau.router)
 app.include_router(field_entry.router)
 app.include_router(cable_stock.router)
 app.include_router(dashboard.router)
+app.include_router(project_metrics.router)
 app.include_router(public.router)
 
 

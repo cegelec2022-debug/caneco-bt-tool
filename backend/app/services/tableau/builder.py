@@ -163,6 +163,16 @@ def derive_tableaux(caneco_lines: Iterable[CanecoLine]) -> list[TableauDerive]:
         if cle:
             departs_par_cle.setdefault(cle, []).append(c)
 
+    # Import local pour eviter une dependance circulaire avec cable_book.
+    from app.services.cable_book.builder import _contributions_for_line
+
+    def _longueur_caneco(deps: list[CanecoLine]) -> float:
+        """Somme methode CANECO (decomposition conducteurs + paralleles + N + PE)."""
+        return round(
+            sum(c.longueur for d in deps for c in _contributions_for_line(d)),
+            2,
+        )
+
     tableaux: dict[str, TableauDerive] = {}
     for cl in tableau_lines:
         cle = normalize_repere(cl.repere)
@@ -174,7 +184,7 @@ def derive_tableaux(caneco_lines: Iterable[CanecoLine]) -> list[TableauDerive]:
             designation=_txt(cl.designation),
             sections=_build_sections(cl),
             nb_departs=len(deps),
-            longueur_totale_m=round(sum((d.longueur or 0.0) for d in deps), 2),
+            longueur_totale_m=_longueur_caneco(deps),
         )
 
     return sorted(tableaux.values(), key=lambda t: t.repere.upper())

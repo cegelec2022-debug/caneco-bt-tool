@@ -98,13 +98,18 @@ export default function DashboardPage() {
         </p>
       </div>
 
-      {/* KPI globaux */}
+      {/* KPI globaux — cliquables, chacun applique un filtre rapide */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <KpiBlock
           icon={<TrendingUp size={16} />}
           label="Avancement moyen"
           value={`${data.avancement_moyen_pct.toFixed(0)}%`}
           tone="blue"
+          active={filter === "en_cours"}
+          onClick={() =>
+            setFilter(filter === "en_cours" ? "tous" : "en_cours")
+          }
+          actionHint="Voir les chantiers en cours"
         />
         <KpiBlock
           icon={<ShieldAlert size={16} />}
@@ -118,12 +123,20 @@ export default function DashboardPage() {
           }
           value={data.nb_ecarts_ouverts_total}
           tone={data.nb_ecarts_bloquants_total > 0 ? "red" : "neutral"}
+          active={filter === "ecarts"}
+          onClick={() => setFilter(filter === "ecarts" ? "tous" : "ecarts")}
+          actionHint="Filtrer les projets avec ecarts"
         />
         <KpiBlock
           icon={<Boxes size={16} />}
           label="Alertes stock"
           value={data.nb_alertes_stock_total}
           tone={data.nb_alertes_stock_total > 0 ? "red" : "neutral"}
+          active={filter === "alertes"}
+          onClick={() =>
+            setFilter(filter === "alertes" ? "tous" : "alertes")
+          }
+          actionHint="Filtrer les projets avec alertes critiques"
         />
         <KpiBlock
           icon={<CheckCircle2 size={16} />}
@@ -131,6 +144,13 @@ export default function DashboardPage() {
           value={`${formatMeters(data.longueur_realisee_totale_m)} m`}
           sub={`sur ${formatMeters(data.longueur_prevue_totale_m)} m`}
           tone="neutral"
+          active={sortBy === "avancement_desc"}
+          onClick={() =>
+            setSortBy(
+              sortBy === "avancement_desc" ? "alertes" : "avancement_desc"
+            )
+          }
+          actionHint="Trier par avancement decroissant"
         />
       </div>
 
@@ -193,12 +213,18 @@ function KpiBlock({
   value,
   sub,
   tone,
+  active,
+  onClick,
+  actionHint,
 }: {
   icon: React.ReactNode;
   label: string;
   value: string | number;
   sub?: string;
   tone: "blue" | "red" | "neutral";
+  active?: boolean;
+  onClick?: () => void;
+  actionHint?: string;
 }) {
   const toneClass =
     tone === "blue"
@@ -206,15 +232,30 @@ function KpiBlock({
       : tone === "red"
       ? "bg-vinci-red/5 border-vinci-red/30 text-vinci-red"
       : "bg-bg-cell border-border-std text-text-primary";
+  const interactive = !!onClick;
   return (
-    <div className={cn("border rounded p-3", toneClass)}>
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={!interactive}
+      aria-pressed={active}
+      title={actionHint}
+      className={cn(
+        "border rounded p-3 text-left transition-all",
+        toneClass,
+        interactive &&
+          "cursor-pointer hover:shadow-sm hover:-translate-y-0.5 active:translate-y-0",
+        active && "ring-2 ring-vinci-blue/30",
+        !interactive && "cursor-default"
+      )}
+    >
       <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide opacity-80">
         {icon}
         {label}
       </div>
       <div className="text-xl sm:text-2xl font-bold mt-1">{value}</div>
       {sub && <div className="text-[11px] opacity-70 mt-0.5">{sub}</div>}
-    </div>
+    </button>
   );
 }
 

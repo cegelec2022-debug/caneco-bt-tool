@@ -335,6 +335,17 @@ export interface CableStockReport {
   quantite_utilisee_totale: number;
 }
 
+// --- Metriques projet (source unique) ------------------------------------
+
+export interface ProjectMetrics {
+  nb_tableaux: number;
+  nb_circuits: number;
+  nb_circuits_saisis: number;
+  avancement_pct: number;
+  longueur_prevue_m: number;
+  longueur_realisee_m: number;
+}
+
 // --- Tableau de bord RA ---------------------------------------------------
 
 export interface DashboardProjectSummary {
