@@ -188,15 +188,15 @@ function getRawValue(line: CanecoLine, fieldKey: keyof CanecoLine): string {
 // ---------------------------------------------------------------------------
 
 const TABS = [
-  { id: "overview", label: "Vue d'ensemble" },
+  { id: "overview", label: "Vue" },
   { id: "studies", label: "Etudes" },
   { id: "bordereau", label: "Bordereau" },
   { id: "cps", label: "CPS" },
-  { id: "verifications", label: "Verifications" },
-  { id: "cable-book", label: "Carnet cables" },
+  { id: "verifications", label: "Verifs" },
+  { id: "cable-book", label: "Carnet" },
   { id: "tableaux", label: "Tableaux" },
-  { id: "saisie-chantier", label: "Saisie chantier" },
-  { id: "stock-cables", label: "Stock cables" },
+  { id: "saisie-chantier", label: "Saisie" },
+  { id: "stock-cables", label: "Stock" },
   { id: "doe", label: "DOE" },
   { id: "settings", label: "Parametres" },
 ] as const;
@@ -374,15 +374,17 @@ export default function ProjectPage() {
         </div>
       </div>
 
-      {/* Onglets — epingles, scroll horizontal sur mobile */}
-      <div className="shrink-0 border-b border-border-std bg-white">
+      {/* Onglets — epingles, scroll horizontal (le fade a droite signale
+          qu'il y a plus d'onglets a faire defiler sur ecrans etroits ou
+          en zoom 100%). */}
+      <div className="shrink-0 border-b border-border-std bg-white relative">
         <div className="flex gap-0 overflow-x-auto scrollbar-none px-3 sm:px-6">
           {visibleTabs.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={cn(
-                "shrink-0 px-3 sm:px-4 py-3 text-xs sm:text-sm border-b-2 transition-colors whitespace-nowrap flex items-center gap-1.5",
+                "shrink-0 px-2.5 sm:px-3.5 py-3 text-xs sm:text-sm border-b-2 transition-colors whitespace-nowrap flex items-center gap-1.5",
                 activeTab === tab.id
                   ? "border-vinci-red text-vinci-blue font-medium"
                   : "border-transparent text-text-secondary hover:text-text-primary"
@@ -398,6 +400,10 @@ export default function ProjectPage() {
             </button>
           ))}
         </div>
+        <div
+          className="pointer-events-none absolute top-0 right-0 bottom-px w-6 bg-gradient-to-l from-white to-transparent"
+          aria-hidden="true"
+        />
       </div>
 
       {/* Contenu onglets — zone de defilement independante par onglet */}
@@ -3603,6 +3609,8 @@ function VerificationsTab({ projectId }: { projectId: string }) {
 
 function TableauxTab({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const isChef = user?.role === "chef_chantier";
   const [selectedExportId, setSelectedExportId] = useState<string>("");
   const [qrTableau, setQrTableau] = useState<Tableau | null>(null);
   const [isLabels, setIsLabels] = useState(false);
@@ -3674,39 +3682,45 @@ function TableauxTab({ projectId }: { projectId: string }) {
       </div>
 
       <div className="flex items-end gap-3 flex-wrap">
-        <div>
-          <label className="block text-xs text-text-tertiary mb-1">
-            Export CANECO source
-          </label>
-          <select
-            value={effectiveExportId}
-            onChange={(e) => setSelectedExportId(e.target.value)}
-            className="text-xs border border-border-std rounded px-2 py-1.5 bg-white min-w-[220px]"
-          >
-            {exports.map((ex) => (
-              <option key={ex.id} value={ex.id}>
-                Indice {ex.indice} — {ex.file_name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <button
-          type="button"
-          onClick={() => generateMut.mutate()}
-          disabled={generateMut.isPending || !effectiveExportId}
-          className={cn(
-            "flex items-center gap-1.5 px-3 py-1.5 text-xs rounded transition-colors",
-            "bg-vinci-blue text-white hover:bg-vinci-blue/90",
-            "disabled:opacity-50 disabled:cursor-not-allowed"
-          )}
-        >
-          {generateMut.isPending ? (
-            <Loader2 size={12} className="animate-spin" />
-          ) : (
-            <RefreshCw size={12} />
-          )}
-          {list.length > 0 ? "Mettre a jour les tableaux" : "Generer les tableaux"}
-        </button>
+        {!isChef && (
+          <>
+            <div>
+              <label className="block text-xs text-text-tertiary mb-1">
+                Export CANECO source
+              </label>
+              <select
+                value={effectiveExportId}
+                onChange={(e) => setSelectedExportId(e.target.value)}
+                className="text-xs border border-border-std rounded px-2 py-1.5 bg-white min-w-[220px]"
+              >
+                {exports.map((ex) => (
+                  <option key={ex.id} value={ex.id}>
+                    Indice {ex.indice} — {ex.file_name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <button
+              type="button"
+              onClick={() => generateMut.mutate()}
+              disabled={generateMut.isPending || !effectiveExportId}
+              className={cn(
+                "flex items-center gap-1.5 px-3 py-1.5 text-xs rounded transition-colors",
+                "bg-vinci-blue text-white hover:bg-vinci-blue/90",
+                "disabled:opacity-50 disabled:cursor-not-allowed"
+              )}
+            >
+              {generateMut.isPending ? (
+                <Loader2 size={12} className="animate-spin" />
+              ) : (
+                <RefreshCw size={12} />
+              )}
+              {list.length > 0
+                ? "Mettre a jour les tableaux"
+                : "Generer les tableaux"}
+            </button>
+          </>
+        )}
         <button
           type="button"
           onClick={handleLabels}
@@ -3768,8 +3782,9 @@ function TableauxTab({ projectId }: { projectId: string }) {
         <div className="border border-dashed border-border-std rounded p-8 text-center">
           <QrCode size={26} className="mx-auto text-text-tertiary mb-2" />
           <p className="text-sm text-text-secondary">
-            Aucun tableau genere. Cliquez sur « Generer les tableaux » a partir
-            de l'export CANECO selectionne.
+            {isChef
+              ? "Aucun tableau genere pour ce projet. Le BE ou le RA doit lancer la generation depuis l'export CANECO."
+              : "Aucun tableau genere. Cliquez sur « Generer les tableaux » a partir de l'export CANECO selectionne."}
           </p>
         </div>
       )}

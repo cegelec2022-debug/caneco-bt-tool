@@ -81,11 +81,13 @@ export default function LoginPage() {
     }
   }
 
-  function fillAccount(email: string) {
-    reset(
-      { email, password: "Demo2026!" },
-      { keepErrors: false, keepDirty: false }
-    );
+  // Clic sur un compte demo = connexion directe (remplit + se connecte en
+  // une seule action). Avant on remplissait juste le formulaire et il
+  // fallait recliquer sur "Se connecter", ce qui creait une UX frustrante.
+  async function connectDemo(email: string) {
+    const data = { email, password: "Demo2026!" };
+    reset(data, { keepErrors: false, keepDirty: false });
+    await onSubmit(data);
   }
 
   return (
@@ -235,8 +237,9 @@ export default function LoginPage() {
                   <button
                     key={account.email}
                     type="button"
-                    onClick={() => fillAccount(account.email)}
-                    className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-bg-light transition-colors group"
+                    onClick={() => connectDemo(account.email)}
+                    disabled={isSubmitting}
+                    className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-bg-light transition-colors group disabled:opacity-60 disabled:cursor-not-allowed"
                   >
                     <span
                       className={cn(
@@ -252,8 +255,8 @@ export default function LoginPage() {
                       </p>
                       <p className="text-xs text-text-tertiary truncate">{account.email}</p>
                     </div>
-                    <span className="text-xs text-text-tertiary opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                      Remplir
+                    <span className="text-xs text-vinci-blue font-medium opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                      Connecter
                     </span>
                   </button>
                 ))}
