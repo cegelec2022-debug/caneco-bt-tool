@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
+from app.api.access import ensure_project_access_read
 from app.api.deps import get_current_user, get_db
 from app.core.config import settings
 from app.models.user import User, UserRole
@@ -30,7 +31,8 @@ from app.services.tableau.fiche import build_fiche_data
 router = APIRouter(prefix="/api/projects", tags=["tableaux"])
 
 
-def _check_project_access(project_id: str, db: Session, current_user: User):
+def _check_project_access_write(project_id: str, db: Session, current_user: User):
+    """Generation des tableaux : ADMIN / RA / BE proprietaire (pas le Chef)."""
     project = project_repository.get_by_id(db, project_id)
     if not project:
         raise HTTPException(
@@ -42,6 +44,15 @@ def _check_project_access(project_id: str, db: Session, current_user: User):
                 status_code=status.HTTP_403_FORBIDDEN, detail="Acces refuse."
             )
     return project
+
+
+def _check_project_access_read(project_id: str, db: Session, current_user: User):
+    """Lecture / impression QR / fiche : ADMIN / RA / CHEF / BE proprietaire.
+
+    Le chef de chantier a besoin de la liste des tableaux pour scanner les
+    QR et acceder aux fiches publiques, et d'imprimer les etiquettes sur place.
+    """
+    return ensure_project_access_read(db, project_id, current_user)
 
 
 def _public_base(base_url: str | None) -> str:
@@ -99,7 +110,7 @@ def generate_tableaux(
     Idempotent : conserve le qr_token des tableaux deja crees (etiquettes deja
     posees toujours valides).
     """
-    _check_project_access(project_id, db, current_user)
+    _check_project_access_write(project_id, db, current_user)
 
     export = caneco_repository.get_export(db, caneco_export_id)
     if not export or export.project_id != project_id:
@@ -132,7 +143,7 @@ def list_tableaux(
     current_user: User = Depends(get_current_user),
 ) -> list[TableauResponse]:
     """Liste les tableaux d'un projet avec le nombre de circuits et la longueur."""
-    _check_project_access(project_id, db, current_user)
+    _check_project_access_read(project_id, db, current_user)
     tableaux = tableau_repository.list_for_project(db, project_id)
     dmap = _derive_map(db, project_id)
     return [_to_response(t, dmap) for t in tableaux]
@@ -156,7 +167,7 @@ def tableau_qr_png(
     current_user: User = Depends(get_current_user),
 ) -> Response:
     """QR code PNG d'un tableau (encode l'URL publique de sa fiche)."""
-    _check_project_access(project_id, db, current_user)
+    _check_project_access_read(project_id, db, current_user)
     tab = _get_tableau_or_404(project_id, tableau_id, db)
     base = _public_base(base_url)
     png = generate_qr_png(f"{base}/t/{tab.qr_token}")
@@ -175,7 +186,7 @@ def tableaux_labels_pdf(
     current_user: User = Depends(get_current_user),
 ) -> Response:
     """Planche A4 d'etiquettes QR (8 par feuille) prete a decouper et coller."""
-    project = _check_project_access(project_id, db, current_user)
+    project = _check_project_access_read(project_id, db, current_user)
     base = _public_base(base_url)
 
     tableaux = tableau_repository.list_for_project(db, project_id)
@@ -223,7 +234,7 @@ def tableau_fiche_pdf(
     current_user: User = Depends(get_current_user),
 ) -> Response:
     """Fiche tableau PDF (en-tete rouge VINCI + recapitulatif vertical)."""
-    project = _check_project_access(project_id, db, current_user)
+    project = _check_project_access_read(project_id, db, current_user)
     tab = _get_tableau_or_404(project_id, tableau_id, db)
     fiche = build_fiche_data(db, tab)
     pdf = build_fiche_pdf(
