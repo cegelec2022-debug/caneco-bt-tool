@@ -9,7 +9,7 @@ from app.api.access import ensure_project_access_read
 from app.api.deps import get_current_user, get_db
 from app.models.caneco import CanecoLine
 from app.models.field_entry import FieldEntry
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.repositories import cable_stock_repository, caneco_repository
 from app.schemas.cable_stock import (
     CableStockItemResponse,
@@ -19,6 +19,15 @@ from app.schemas.cable_stock import (
 from app.services.cable_stock.service import list_stock
 
 router = APIRouter(prefix="/api/projects", tags=["cable-stock"])
+
+# Champs reserves au RA / BE / ADMIN : le chef de chantier ne saisit que la
+# quantite livree (et son seuil d'alerte personnel). Les achats et dates
+# d'appro sont du ressort du RA.
+_RA_ONLY_FIELDS: tuple[str, ...] = (
+    "quantite_achetee",
+    "date_achat",
+    "date_livraison_prevue",
+)
 
 
 def _build_response(items) -> CableStockReport:
@@ -40,6 +49,8 @@ def _build_response(items) -> CableStockReport:
                 stock_restant=it.stock_restant,
                 seuil_alerte_min_m=it.seuil_alerte_min_m,
                 en_alerte=it.en_alerte,
+                date_achat=it.date_achat,
+                date_livraison_prevue=it.date_livraison_prevue,
             )
             for it in items
         ],
@@ -108,6 +119,21 @@ def upsert_cable_stock(
     """
     ensure_project_access_read(db, project_id, current_user)
 
+    # Verrouillage des champs reserves au RA pour le chef de chantier.
+    # On ignore les valeurs nulles non envoyees (pas de tentative reelle).
+    if current_user.role == UserRole.CHEF_CHANTIER:
+        sent = payload.model_fields_set
+        forbidden_sent = [f for f in _RA_ONLY_FIELDS if f in sent]
+        if forbidden_sent:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    "Le chef de chantier ne peut pas modifier "
+                    + ", ".join(forbidden_sent)
+                    + ". Ces champs sont reserves au RA."
+                ),
+            )
+
     item = cable_stock_repository.get_or_create(
         db,
         project_id=project_id,
@@ -116,13 +142,21 @@ def upsert_cable_stock(
         ame=payload.ame.strip(),
         section_mm2=payload.section_mm2,
     )
-    cable_stock_repository.update_quantities(
-        db,
-        item,
-        quantite_achetee=payload.quantite_achetee,
-        quantite_livree=payload.quantite_livree,
-        seuil_alerte_min_m=payload.seuil_alerte_min_m,
-    )
+
+    # Sentinelle : on ne touche aux dates que si le RA les a explicitement
+    # envoyees dans le payload (None autorise pour effacer).
+    sent_fields = payload.model_fields_set
+    update_kwargs: dict = {
+        "quantite_achetee": payload.quantite_achetee,
+        "quantite_livree": payload.quantite_livree,
+        "seuil_alerte_min_m": payload.seuil_alerte_min_m,
+    }
+    if "date_achat" in sent_fields:
+        update_kwargs["date_achat"] = payload.date_achat
+    if "date_livraison_prevue" in sent_fields:
+        update_kwargs["date_livraison_prevue"] = payload.date_livraison_prevue
+
+    cable_stock_repository.update_quantities(db, item, **update_kwargs)
 
     lines, entries = _load_lines_and_entries(db, project_id)
     items = list_stock(db, project_id, lines, entries)
@@ -142,6 +176,11 @@ def delete_cable_stock_item(
 ):
     """Supprime une reference stock (les saisies chantier ne sont pas touchees)."""
     ensure_project_access_read(db, project_id, current_user)
+    if current_user.role == UserRole.CHEF_CHANTIER:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Le chef de chantier ne peut pas supprimer de reference stock.",
+        )
     item = cable_stock_repository.get_by_id(db, item_id)
     if item is None or item.project_id != project_id:
         raise HTTPException(

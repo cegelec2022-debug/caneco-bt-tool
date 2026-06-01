@@ -90,3 +90,23 @@ def be_token(client):
 @pytest.fixture
 def be_headers(be_token):
     return {"Authorization": f"Bearer {be_token}"}
+
+
+@pytest.fixture
+def chef_token(client):
+    resp = client.post(
+        "/api/auth/register",
+        json={
+            "email": "chef@test.fr",
+            "password": "TestPass2026!",
+            "full_name": "Chef Chantier",
+            "role": "chef_chantier",
+        },
+    )
+    assert resp.status_code == 200
+    return resp.json()["access_token"]
+
+
+@pytest.fixture
+def chef_headers(chef_token):
+    return {"Authorization": f"Bearer {chef_token}"}

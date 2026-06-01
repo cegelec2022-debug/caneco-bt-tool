@@ -229,3 +229,93 @@ def test_stock_pas_d_alerte_si_seuil_zero(
     ref = next(it for it in resp["items"] if it["section_label"] == "5G6")
     assert ref["seuil_alerte_min_m"] == 0.0
     assert ref["en_alerte"] is False  # seuil 0 => jamais en alerte
+
+
+# --- Permissions par role : chef ne peut pas modifier les champs RA-only ----
+
+
+def test_stock_chef_peut_saisir_livraison(
+    client, chef_headers, project_with_lines
+):
+    """Le chef de chantier peut renseigner la quantite livree et le seuil."""
+    pid, _, _ = project_with_lines
+    resp = client.put(
+        f"/api/projects/{pid}/cable-stock",
+        json={
+            "type_cable": "U1000R2V",
+            "section_label": "5G6",
+            "ame": "Cuivre",
+            "quantite_livree": 250.0,
+            "seuil_alerte_min_m": 50.0,
+        },
+        headers=chef_headers,
+    )
+    assert resp.status_code == 200
+    ref = next(
+        it for it in resp.json()["items"] if it["section_label"] == "5G6"
+    )
+    assert ref["quantite_livree"] == 250.0
+    assert ref["seuil_alerte_min_m"] == 50.0
+
+
+def test_stock_chef_ne_peut_pas_modifier_quantite_achetee(
+    client, chef_headers, project_with_lines
+):
+    """quantite_achetee est reservee au RA : tentative chef -> 403."""
+    pid, _, _ = project_with_lines
+    resp = client.put(
+        f"/api/projects/{pid}/cable-stock",
+        json={
+            "type_cable": "U1000R2V",
+            "section_label": "5G6",
+            "ame": "Cuivre",
+            "quantite_achetee": 500.0,
+        },
+        headers=chef_headers,
+    )
+    assert resp.status_code == 403
+    assert "quantite_achetee" in resp.json()["detail"]
+
+
+def test_stock_chef_ne_peut_pas_modifier_dates(
+    client, chef_headers, project_with_lines
+):
+    """date_achat et date_livraison_prevue sont reservees au RA -> 403."""
+    pid, _, _ = project_with_lines
+    resp = client.put(
+        f"/api/projects/{pid}/cable-stock",
+        json={
+            "type_cable": "U1000R2V",
+            "section_label": "5G6",
+            "ame": "Cuivre",
+            "date_achat": "2026-06-15",
+        },
+        headers=chef_headers,
+    )
+    assert resp.status_code == 403
+
+
+def test_stock_ra_peut_modifier_dates_et_achat(
+    client, admin_headers, project_with_lines
+):
+    """Le RA (ici admin) peut renseigner achat + dates simultanement."""
+    pid, _, _ = project_with_lines
+    resp = client.put(
+        f"/api/projects/{pid}/cable-stock",
+        json={
+            "type_cable": "U1000R2V",
+            "section_label": "5G6",
+            "ame": "Cuivre",
+            "quantite_achetee": 800.0,
+            "date_achat": "2026-06-15",
+            "date_livraison_prevue": "2026-06-30",
+        },
+        headers=admin_headers,
+    )
+    assert resp.status_code == 200
+    ref = next(
+        it for it in resp.json()["items"] if it["section_label"] == "5G6"
+    )
+    assert ref["quantite_achetee"] == 800.0
+    assert ref["date_achat"] == "2026-06-15"
+    assert ref["date_livraison_prevue"] == "2026-06-30"

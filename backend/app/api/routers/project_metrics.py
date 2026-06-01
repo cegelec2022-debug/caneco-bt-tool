@@ -29,6 +29,10 @@ class ProjectMetricsResponse(BaseModel):
     nb_circuits: int
     nb_circuits_saisis: int
     avancement_pct: float
+    pct_tirets: float
+    validation_pct: float
+    poids_tirets_pct: float
+    poids_validation_pct: float
     longueur_prevue_m: float
     longueur_realisee_m: float
 
@@ -43,7 +47,7 @@ def get_project_metrics(
     current_user: User = Depends(get_current_user),
 ) -> ProjectMetricsResponse:
     """Renvoie les KPI projet (sources unique)."""
-    ensure_project_access_read(db, project_id, current_user)
+    project = ensure_project_access_read(db, project_id, current_user)
 
     exports = caneco_repository.list_for_project(db, project_id)
     if not exports:
@@ -52,6 +56,10 @@ def get_project_metrics(
             nb_circuits=0,
             nb_circuits_saisis=0,
             avancement_pct=0.0,
+            pct_tirets=0.0,
+            validation_pct=float(project.validation_pct),
+            poids_tirets_pct=float(project.poids_tirets_pct),
+            poids_validation_pct=float(project.poids_validation_pct),
             longueur_prevue_m=0.0,
             longueur_realisee_m=0.0,
         )
@@ -69,12 +77,16 @@ def get_project_metrics(
         if line_ids
         else []
     )
-    m = compute_project_metrics(lines, entries)
+    m = compute_project_metrics(lines, entries, project)
     return ProjectMetricsResponse(
         nb_tableaux=m.nb_tableaux,
         nb_circuits=m.nb_circuits,
         nb_circuits_saisis=m.nb_circuits_saisis,
         avancement_pct=round(m.avancement_pct, 1),
+        pct_tirets=round(m.pct_tirets, 1),
+        validation_pct=float(project.validation_pct),
+        poids_tirets_pct=float(project.poids_tirets_pct),
+        poids_validation_pct=float(project.poids_validation_pct),
         longueur_prevue_m=m.longueur_prevue_m,
         longueur_realisee_m=m.longueur_realisee_m,
     )

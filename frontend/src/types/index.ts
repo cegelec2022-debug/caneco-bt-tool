@@ -9,6 +9,15 @@ export interface User {
 
 export type DomaineInstallation = "habitation" | "tertiaire" | "industriel" | "erp";
 
+export type ProjectPhase =
+  | "etudes"
+  | "approvisionnement"
+  | "pose"
+  | "mise_en_service"
+  | "reception";
+
+export type ProjectPriorite = "critique" | "standard" | "faible";
+
 export interface Project {
   id: string;
   code: string;
@@ -18,6 +27,13 @@ export interface Project {
   description: string | null;
   status: string;
   domaine_installation: DomaineInstallation;
+  phase: ProjectPhase;
+  priorite: ProjectPriorite;
+  notes_ra: string | null;
+  date_fin_prevue: string | null;
+  poids_tirets_pct: number;
+  poids_validation_pct: number;
+  validation_pct: number;
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -50,6 +66,13 @@ export interface ProjectUpdate {
   description?: string;
   status?: string;
   domaine_installation?: DomaineInstallation;
+  phase?: ProjectPhase;
+  priorite?: ProjectPriorite;
+  notes_ra?: string | null;
+  date_fin_prevue?: string | null;
+  poids_tirets_pct?: number;
+  poids_validation_pct?: number;
+  validation_pct?: number;
 }
 
 export interface CanecoExport {
@@ -324,6 +347,8 @@ export interface CableStockItemRow {
   stock_restant: number;
   seuil_alerte_min_m: number;
   en_alerte: boolean;
+  date_achat: string | null;
+  date_livraison_prevue: string | null;
 }
 
 export interface CableStockReport {
@@ -342,6 +367,10 @@ export interface ProjectMetrics {
   nb_circuits: number;
   nb_circuits_saisis: number;
   avancement_pct: number;
+  pct_tirets: number;
+  validation_pct: number;
+  poids_tirets_pct: number;
+  poids_validation_pct: number;
   longueur_prevue_m: number;
   longueur_realisee_m: number;
 }
@@ -360,12 +389,17 @@ export interface DashboardProjectSummary {
   nb_circuits: number;
   nb_circuits_saisis: number;
   avancement_pct: number;
+  pct_tirets: number;
+  validation_pct: number;
   longueur_prevue_m: number;
   longueur_realisee_m: number;
   nb_ecarts_ouverts: number;
   nb_ecarts_bloquants: number;
   nb_alertes_stock: number;
   derniere_activite: string | null;
+  phase: ProjectPhase;
+  priorite: ProjectPriorite;
+  date_fin_prevue: string | null;
 }
 
 export interface DashboardSummary {
@@ -388,6 +422,8 @@ export interface CableStockUpsert {
   quantite_achetee?: number | null;
   quantite_livree?: number | null;
   seuil_alerte_min_m?: number | null;
+  date_achat?: string | null;
+  date_livraison_prevue?: string | null;
 }
 
 export interface CarnetTableau {

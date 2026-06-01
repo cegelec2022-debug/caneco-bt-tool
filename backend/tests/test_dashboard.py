@@ -98,6 +98,10 @@ def test_dashboard_summary_par_projet(client, db, admin_headers):
     proj = next(x for x in body["projets"] if x["code"] == "DASH-TST")
     assert proj["nb_circuits"] == 4
     assert proj["nb_circuits_saisis"] == 1
-    assert proj["avancement_pct"] == 25.0
+    # Avancement compose : projet en defaut DB = poids 70/30 et validation 0
+    # -> avancement = 0.7 * 25% (tirets) + 0.3 * 0% (validation) = 17.5
+    assert proj["pct_tirets"] == 25.0
+    assert proj["validation_pct"] == 0.0
+    assert proj["avancement_pct"] == 17.5
     assert proj["longueur_prevue_m"] == 40.0  # 4 circuits x 10 m
     assert proj["longueur_realisee_m"] == 12.0

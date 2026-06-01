@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
+from datetime import date
 
 from sqlalchemy.orm import Session
 
@@ -34,6 +35,8 @@ class StockComputed:
     quantite_utilisee: float
     seuil_alerte_min_m: float
     item_id: str | None = None  # None si la reference n'a pas encore d'enregistrement
+    date_achat: date | None = None
+    date_livraison_prevue: date | None = None
 
     @property
     def stock_restant(self) -> float:
@@ -167,6 +170,8 @@ def list_stock(
                 quantite_utilisee=used_m,
                 seuil_alerte_min_m=it.seuil_alerte_min_m if it else 0.0,
                 item_id=it.id if it else None,
+                date_achat=it.date_achat if it else None,
+                date_livraison_prevue=it.date_livraison_prevue if it else None,
             )
         )
 

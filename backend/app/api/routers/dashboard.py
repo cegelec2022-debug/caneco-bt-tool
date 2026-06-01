@@ -11,7 +11,7 @@ chantier, ecarts, stock) — aucune donnee inventee.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict
@@ -44,12 +44,18 @@ class ProjectSummary(BaseModel):
     nb_circuits: int
     nb_circuits_saisis: int
     avancement_pct: float
+    pct_tirets: float
+    validation_pct: float
     longueur_prevue_m: float
     longueur_realisee_m: float
     nb_ecarts_ouverts: int
     nb_ecarts_bloquants: int
     nb_alertes_stock: int
     derniere_activite: datetime | None
+    # Pilotage RA
+    phase: str
+    priorite: str
+    date_fin_prevue: date | None
 
 
 class DashboardSummary(BaseModel):
@@ -103,7 +109,9 @@ def _build_project_summary(db: Session, project: Project) -> ProjectSummary:
 
     # Indicateurs de chantier : SOURCE UNIQUE partagee avec tous les autres
     # ecrans (Tableaux, Saisie chantier...) pour garantir la coherence.
-    metrics = compute_project_metrics(lines, entries)
+    # On passe ``project`` pour que l'avancement integre la ponderation RA
+    # et le % de validation manuel.
+    metrics = compute_project_metrics(lines, entries, project)
     nb_tableaux = metrics.nb_tableaux
     nb_circuits = metrics.nb_circuits
     nb_saisis = metrics.nb_circuits_saisis
@@ -157,12 +165,17 @@ def _build_project_summary(db: Session, project: Project) -> ProjectSummary:
         nb_circuits=nb_circuits,
         nb_circuits_saisis=nb_saisis,
         avancement_pct=round(avancement, 1),
+        pct_tirets=round(metrics.pct_tirets, 1),
+        validation_pct=round(metrics.validation_pct, 1),
         longueur_prevue_m=round(long_prevue, 2),
         longueur_realisee_m=round(long_realisee, 2),
         nb_ecarts_ouverts=nb_ecarts_ouverts,
         nb_ecarts_bloquants=nb_ecarts_bloquants,
         nb_alertes_stock=nb_alertes_stock,
         derniere_activite=derniere_activite,
+        phase=project.phase,
+        priorite=project.priorite,
+        date_fin_prevue=project.date_fin_prevue,
     )
 
 

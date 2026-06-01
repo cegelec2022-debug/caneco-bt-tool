@@ -26,7 +26,7 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   deleteCaneco,
   downloadCanecoExcel,
@@ -80,6 +80,7 @@ import type {
   BordereauSection,
   BordereauSheetPreview,
   CableBookEntry,
+  CableStockUpsert,
   CanecoExport,
   CanecoExportDetail,
   CanecoLine,
@@ -88,6 +89,8 @@ import type {
   Gap,
   GapSeverity,
   GapStatus,
+  ProjectPhase,
+  ProjectPriorite,
   ProjectUpdate,
   Tableau,
   VerificationRun,
@@ -195,6 +198,7 @@ const TABS = [
   { id: "saisie-chantier", label: "Saisie chantier" },
   { id: "stock-cables", label: "Stock cables" },
   { id: "doe", label: "DOE" },
+  { id: "settings", label: "Parametres" },
 ] as const;
 
 // Onglets caches au Chef de Chantier (reserves au dossier d'etudes : BE / RA / admin)
@@ -202,6 +206,7 @@ const TABS_HIDDEN_FOR_CHEF: ReadonlySet<TabId> = new Set([
   "bordereau",
   "cps",
   "verifications",
+  "settings",
 ]);
 
 type TabId = (typeof TABS)[number]["id"];
@@ -228,9 +233,29 @@ export default function ProjectPage() {
   const visibleTabs = TABS.filter(
     (t) => !isChef || !TABS_HIDDEN_FOR_CHEF.has(t.id)
   );
+  const [searchParams, setSearchParams] = useSearchParams();
+  // Permet aux liens externes (notamment depuis le dashboard RA) d'ouvrir
+  // directement le bon onglet via ?tab=<id>. Si l'onglet demande est masque
+  // pour le role courant, on retombe sur la valeur par defaut.
+  const requestedTab = searchParams.get("tab") as TabId | null;
+  const validRequestedTab =
+    requestedTab && visibleTabs.some((t) => t.id === requestedTab)
+      ? requestedTab
+      : null;
   const [activeTab, setActiveTab] = useState<TabId>(
-    isChef ? "saisie-chantier" : "overview"
+    validRequestedTab ?? (isChef ? "saisie-chantier" : "overview")
   );
+  useEffect(() => {
+    if (validRequestedTab && validRequestedTab !== activeTab) {
+      setActiveTab(validRequestedTab);
+      // Une fois pris en compte, on retire le parametre pour ne pas le
+      // re-appliquer si l'utilisateur change d'onglet manuellement.
+      const next = new URLSearchParams(searchParams);
+      next.delete("tab");
+      setSearchParams(next, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [validRequestedTab]);
   const [showEdit, setShowEdit] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [editData, setEditData] = useState<ProjectUpdate>({});
@@ -433,6 +458,7 @@ export default function ProjectPage() {
             </div>
           </div>
         )}
+        {activeTab === "settings" && <SettingsTab projectId={id!} />}
       </div>
 
       {/* Modal modifier projet */}
@@ -4919,15 +4945,22 @@ function StockAlertBadge({ projectId }: { projectId: string }) {
 
 function StockCablesTab({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const isChef = user?.role === "chef_chantier";
   const [typeFilter, setTypeFilter] = useState("");
   const [sectionFilter, setSectionFilter] = useState("");
   const [ameFilter, setAmeFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState<
     "tous" | "alerte" | "utilise" | "non_commence"
   >("tous");
-  const [drafts, setDrafts] = useState<
-    Record<string, { achete?: string; livre?: string; seuil?: string }>
-  >({});
+  type RowDraft = {
+    achete?: string;
+    livre?: string;
+    seuil?: string;
+    dateAchat?: string;
+    dateLivraison?: string;
+  };
+  const [drafts, setDrafts] = useState<Record<string, RowDraft>>({});
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -5001,21 +5034,32 @@ function StockCablesTab({ projectId }: { projectId: string }) {
     const draft = drafts[k] ?? {};
     const num = (v: string | undefined) =>
       v === undefined || v.trim() === "" ? null : Number(v.replace(",", "."));
-    const payload = {
+    // Champs RA-only : on les omet du payload si le chef enregistre,
+    // sinon le backend refuserait la requete (cf. router cable_stock).
+    const payload: CableStockUpsert = {
       type_cable: it.type_cable,
       section_label: it.section_label,
       ame: it.ame,
       section_mm2: it.section_mm2,
-      quantite_achetee: num(draft.achete),
       quantite_livree: num(draft.livre),
       seuil_alerte_min_m: num(draft.seuil),
     };
+    if (!isChef) {
+      payload.quantite_achetee = num(draft.achete);
+      if (draft.dateAchat !== undefined) {
+        payload.date_achat = draft.dateAchat.trim() === "" ? null : draft.dateAchat;
+      }
+      if (draft.dateLivraison !== undefined) {
+        payload.date_livraison_prevue =
+          draft.dateLivraison.trim() === "" ? null : draft.dateLivraison;
+      }
+    }
     if (
       [
         payload.quantite_achetee,
         payload.quantite_livree,
         payload.seuil_alerte_min_m,
-      ].some((v) => v !== null && (Number.isNaN(v) || (v as number) < 0))
+      ].some((v) => v !== null && v !== undefined && (Number.isNaN(v) || (v as number) < 0))
     ) {
       setErrorMsg("Valeurs invalides : utiliser des nombres positifs.");
       return;
@@ -5053,9 +5097,20 @@ function StockCablesTab({ projectId }: { projectId: string }) {
     <div className="flex-1 min-h-0 overflow-auto p-4 sm:p-6 space-y-4">
       <div className="bg-vinci-blue/5 border border-vinci-blue/20 rounded p-3 text-xs text-vinci-blue">
         Le stock s'actualise automatiquement a chaque saisie chantier (longueurs
-        reelles ventilees par section). Renseignez la quantite achetee (RA) et
-        livree (Chef), ainsi qu'un seuil minimum pour declencher une alerte
-        quand le stock devient critique.
+        reelles ventilees par section).{" "}
+        {isChef ? (
+          <>
+            Vous voyez ici les achats programmes par le RA (lecture seule).
+            Saisissez la quantite <strong>livree sur chantier</strong> au fur
+            et a mesure, et ajustez le seuil d'alerte si necessaire.
+          </>
+        ) : (
+          <>
+            Renseignez la quantite achetee, la quantite livree, les dates
+            d'achat et de livraison prevue, ainsi qu'un seuil minimum pour
+            declencher une alerte quand le stock devient critique.
+          </>
+        )}
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -5201,6 +5256,12 @@ function StockCablesTab({ projectId }: { projectId: string }) {
                 <th className="px-2 sm:px-3 py-2 text-right font-medium text-white/90 w-[110px]">
                   Achete (m)
                 </th>
+                <th className="px-2 sm:px-3 py-2 text-center font-medium text-white/90 w-[130px] hidden lg:table-cell">
+                  Achat le
+                </th>
+                <th className="px-2 sm:px-3 py-2 text-center font-medium text-white/90 w-[130px] hidden lg:table-cell">
+                  Livraison prevue
+                </th>
                 <th className="px-2 sm:px-3 py-2 text-right font-medium text-white/90 w-[110px]">
                   Livre (m)
                 </th>
@@ -5225,7 +5286,9 @@ function StockCablesTab({ projectId }: { projectId: string }) {
                 const dirty =
                   draft.achete !== undefined ||
                   draft.livre !== undefined ||
-                  draft.seuil !== undefined;
+                  draft.seuil !== undefined ||
+                  draft.dateAchat !== undefined ||
+                  draft.dateLivraison !== undefined;
                 return (
                   <tr
                     key={k}
@@ -5244,20 +5307,71 @@ function StockCablesTab({ projectId }: { projectId: string }) {
                       {it.ame || "—"}
                     </td>
                     <td className="px-2 py-1">
-                      <input
-                        type="number"
-                        inputMode="decimal"
-                        min="0"
-                        step="0.1"
-                        value={draft.achete ?? String(it.quantite_achetee)}
-                        onChange={(e) =>
-                          setDrafts((p) => ({
-                            ...p,
-                            [k]: { ...p[k], achete: e.target.value },
-                          }))
-                        }
-                        className="w-full border border-border-std rounded px-1.5 py-1 text-xs text-right focus:outline-none focus:ring-2 focus:ring-vinci-blue/30"
-                      />
+                      {isChef ? (
+                        <div
+                          className="w-full text-xs text-right text-text-primary font-medium px-1.5 py-1"
+                          title="Saisi par le RA"
+                        >
+                          {formatMeters(it.quantite_achetee)}
+                        </div>
+                      ) : (
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          min="0"
+                          step="0.1"
+                          value={draft.achete ?? String(it.quantite_achetee)}
+                          onChange={(e) =>
+                            setDrafts((p) => ({
+                              ...p,
+                              [k]: { ...p[k], achete: e.target.value },
+                            }))
+                          }
+                          className="w-full border border-border-std rounded px-1.5 py-1 text-xs text-right focus:outline-none focus:ring-2 focus:ring-vinci-blue/30"
+                        />
+                      )}
+                    </td>
+                    <td className="px-2 py-1 hidden lg:table-cell">
+                      {isChef ? (
+                        <div className="text-xs text-center text-text-secondary px-1">
+                          {it.date_achat ? formatDate(it.date_achat) : "—"}
+                        </div>
+                      ) : (
+                        <input
+                          type="date"
+                          value={draft.dateAchat ?? (it.date_achat ?? "")}
+                          onChange={(e) =>
+                            setDrafts((p) => ({
+                              ...p,
+                              [k]: { ...p[k], dateAchat: e.target.value },
+                            }))
+                          }
+                          className="w-full border border-border-std rounded px-1 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-vinci-blue/30"
+                        />
+                      )}
+                    </td>
+                    <td className="px-2 py-1 hidden lg:table-cell">
+                      {isChef ? (
+                        <div className="text-xs text-center text-text-secondary px-1">
+                          {it.date_livraison_prevue
+                            ? formatDate(it.date_livraison_prevue)
+                            : "—"}
+                        </div>
+                      ) : (
+                        <input
+                          type="date"
+                          value={
+                            draft.dateLivraison ?? (it.date_livraison_prevue ?? "")
+                          }
+                          onChange={(e) =>
+                            setDrafts((p) => ({
+                              ...p,
+                              [k]: { ...p[k], dateLivraison: e.target.value },
+                            }))
+                          }
+                          className="w-full border border-border-std rounded px-1 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-vinci-blue/30"
+                        />
+                      )}
                     </td>
                     <td className="px-2 py-1">
                       <input
@@ -5316,7 +5430,7 @@ function StockCablesTab({ projectId }: { projectId: string }) {
                         >
                           {savingKey === k ? "..." : "OK"}
                         </button>
-                        {it.item_id && (
+                        {it.item_id && !isChef && (
                           <button
                             type="button"
                             onClick={() => remove(it)}
@@ -5402,4 +5516,332 @@ function formatMeters(m: number): string {
     minimumFractionDigits: 1,
     maximumFractionDigits: 1,
   }).format(m);
+}
+
+// ---------------------------------------------------------------------------
+// Onglet Parametres (RA / BE proprietaire / admin)
+// ---------------------------------------------------------------------------
+
+const PHASE_LABELS: Record<ProjectPhase, string> = {
+  etudes: "Etudes",
+  approvisionnement: "Approvisionnement",
+  pose: "Pose",
+  mise_en_service: "Mise en service",
+  reception: "Reception",
+};
+
+const PRIORITE_LABELS: Record<ProjectPriorite, string> = {
+  critique: "Critique",
+  standard: "Standard",
+  faible: "Faible",
+};
+
+function SettingsTab({ projectId }: { projectId: string }) {
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const { data: project, isLoading } = useQuery({
+    queryKey: ["project", projectId],
+    queryFn: () => getProject(projectId),
+  });
+
+  const canEdit =
+    !!user &&
+    (user.role === "admin" ||
+      user.role === "RA" ||
+      (user.role === "BE" && project?.created_by === user.id));
+
+  type FormState = {
+    phase: ProjectPhase;
+    priorite: ProjectPriorite;
+    date_fin_prevue: string;
+    notes_ra: string;
+    poids_tirets_pct: number;
+    poids_validation_pct: number;
+    validation_pct: number;
+  };
+  const [form, setForm] = useState<FormState | null>(null);
+  const [saveOk, setSaveOk] = useState<string | null>(null);
+  const [saveErr, setSaveErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (project && form === null) {
+      setForm({
+        phase: project.phase,
+        priorite: project.priorite,
+        date_fin_prevue: project.date_fin_prevue ?? "",
+        notes_ra: project.notes_ra ?? "",
+        poids_tirets_pct: project.poids_tirets_pct,
+        poids_validation_pct: project.poids_validation_pct,
+        validation_pct: project.validation_pct,
+      });
+    }
+  }, [project, form]);
+
+  const mut = useMutation({
+    mutationFn: async (payload: ProjectUpdate) => {
+      return updateProject(projectId, payload);
+    },
+    onSuccess: () => {
+      setSaveOk("Parametres enregistres.");
+      setSaveErr(null);
+      queryClient.invalidateQueries({ queryKey: ["project", projectId] });
+      queryClient.invalidateQueries({ queryKey: ["project-metrics", projectId] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard-summary"] });
+      setTimeout(() => setSaveOk(null), 3000);
+    },
+    onError: () => {
+      setSaveErr("Echec de l'enregistrement (droits insuffisants ?).");
+    },
+  });
+
+  if (isLoading || !project || form === null) {
+    return (
+      <div className="flex-1 min-h-0 overflow-auto p-6">
+        <p className="text-sm text-text-tertiary">Chargement...</p>
+      </div>
+    );
+  }
+
+  // Slider tirets/validation : la somme reste a 100. Quand on bouge l'un,
+  // l'autre s'ajuste automatiquement pour rester intuitif.
+  function setTiretsWeight(v: number) {
+    const t = Math.max(0, Math.min(100, v));
+    setForm((f) => (f ? { ...f, poids_tirets_pct: t, poids_validation_pct: 100 - t } : f));
+  }
+
+  function submit() {
+    if (!form) return;
+    setSaveOk(null);
+    setSaveErr(null);
+    mut.mutate({
+      phase: form.phase,
+      priorite: form.priorite,
+      date_fin_prevue: form.date_fin_prevue || null,
+      notes_ra: form.notes_ra || null,
+      poids_tirets_pct: form.poids_tirets_pct,
+      poids_validation_pct: form.poids_validation_pct,
+      validation_pct: form.validation_pct,
+    });
+  }
+
+  const avancementPreview =
+    (form.poids_tirets_pct / 100) * 0 +
+    (form.poids_validation_pct / 100) * form.validation_pct;
+  // Note: la preview suppose pct_tirets = 0 pour ne montrer que la part
+  // de validation. La vraie valeur composee est calculee cote backend.
+
+  const disabled = !canEdit;
+
+  return (
+    <div className="flex-1 min-h-0 overflow-auto p-4 sm:p-6">
+      <div className="max-w-3xl mx-auto space-y-6">
+        <div>
+          <h2 className="text-lg font-semibold text-text-primary">
+            Parametres du projet
+          </h2>
+          <p className="text-xs text-text-tertiary mt-0.5">
+            Configurez le pilotage du chantier et la formule d'avancement
+            utilisee dans le tableau de bord RA.
+          </p>
+        </div>
+
+        {!canEdit && (
+          <div className="bg-yellow-50 border border-yellow-200 rounded p-3 text-xs text-yellow-800">
+            Lecture seule : seul le RA ou le BE proprietaire du projet peut
+            modifier ces parametres.
+          </div>
+        )}
+
+        {/* Pilotage --------------------------------------------------------- */}
+        <section className="bg-white border border-border-std rounded">
+          <div className="px-4 py-3 border-b border-border-std">
+            <h3 className="text-sm font-semibold text-text-primary">Pilotage</h3>
+            <p className="text-[11px] text-text-tertiary">
+              Affichage et tri sur le tableau de bord RA.
+            </p>
+          </div>
+          <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-text-secondary mb-1">
+                Phase actuelle
+              </label>
+              <select
+                value={form.phase}
+                disabled={disabled}
+                onChange={(e) =>
+                  setForm((f) => (f ? { ...f, phase: e.target.value as ProjectPhase } : f))
+                }
+                className="w-full text-sm border border-border-std rounded px-3 py-2 bg-white disabled:bg-bg-cell disabled:text-text-tertiary"
+              >
+                {(Object.keys(PHASE_LABELS) as ProjectPhase[]).map((p) => (
+                  <option key={p} value={p}>
+                    {PHASE_LABELS[p]}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-text-secondary mb-1">
+                Priorite
+              </label>
+              <select
+                value={form.priorite}
+                disabled={disabled}
+                onChange={(e) =>
+                  setForm((f) =>
+                    f ? { ...f, priorite: e.target.value as ProjectPriorite } : f
+                  )
+                }
+                className="w-full text-sm border border-border-std rounded px-3 py-2 bg-white disabled:bg-bg-cell disabled:text-text-tertiary"
+              >
+                {(Object.keys(PRIORITE_LABELS) as ProjectPriorite[]).map((p) => (
+                  <option key={p} value={p}>
+                    {PRIORITE_LABELS[p]}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-text-secondary mb-1">
+                Date prevue de fin de chantier
+              </label>
+              <input
+                type="date"
+                value={form.date_fin_prevue}
+                disabled={disabled}
+                onChange={(e) =>
+                  setForm((f) => (f ? { ...f, date_fin_prevue: e.target.value } : f))
+                }
+                className="w-full text-sm border border-border-std rounded px-3 py-2 bg-white disabled:bg-bg-cell disabled:text-text-tertiary"
+              />
+            </div>
+          </div>
+        </section>
+
+        {/* Avancement compose ---------------------------------------------- */}
+        <section className="bg-white border border-border-std rounded">
+          <div className="px-4 py-3 border-b border-border-std">
+            <h3 className="text-sm font-semibold text-text-primary">
+              Formule d'avancement
+            </h3>
+            <p className="text-[11px] text-text-tertiary">
+              Avancement projet = poids tirets x % circuits saisis + poids
+              validation x % validation. Defaut : 70 / 30.
+            </p>
+          </div>
+          <div className="p-4 space-y-5">
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-medium text-text-secondary">
+                  Poids du tirage de cable
+                </label>
+                <span className="text-xs font-mono font-semibold text-vinci-blue">
+                  {form.poids_tirets_pct.toFixed(0)} %
+                </span>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                step={5}
+                value={form.poids_tirets_pct}
+                disabled={disabled}
+                onChange={(e) => setTiretsWeight(Number(e.target.value))}
+                className="w-full accent-vinci-blue disabled:opacity-50"
+              />
+              <p className="text-[11px] text-text-tertiary mt-1">
+                Le poids de la validation s'ajuste automatiquement :{" "}
+                <span className="font-mono">
+                  {form.poids_validation_pct.toFixed(0)} %
+                </span>
+              </p>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-medium text-text-secondary">
+                  % de validation actuel
+                </label>
+                <span className="text-xs font-mono font-semibold text-vinci-red">
+                  {form.validation_pct.toFixed(0)} %
+                </span>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                step={5}
+                value={form.validation_pct}
+                disabled={disabled}
+                onChange={(e) =>
+                  setForm((f) =>
+                    f ? { ...f, validation_pct: Number(e.target.value) } : f
+                  )
+                }
+                className="w-full accent-vinci-red disabled:opacity-50"
+              />
+              <p className="text-[11px] text-text-tertiary mt-1">
+                Saisi manuellement par le RA : essais, recettes, livrables
+                valides cote client.
+              </p>
+            </div>
+
+            <div className="bg-vinci-blue/5 border border-vinci-blue/20 rounded p-3 text-xs text-vinci-blue">
+              Contribution validation a l'avancement (tirets = 0 %) :{" "}
+              <strong>{avancementPreview.toFixed(1)} %</strong>. La valeur
+              composee reelle apparait dans la carte projet du dashboard.
+            </div>
+          </div>
+        </section>
+
+        {/* Notes ----------------------------------------------------------- */}
+        <section className="bg-white border border-border-std rounded">
+          <div className="px-4 py-3 border-b border-border-std">
+            <h3 className="text-sm font-semibold text-text-primary">
+              Notes du RA
+            </h3>
+            <p className="text-[11px] text-text-tertiary">
+              Espace libre pour contraintes client, points d'attention, suite a
+              donner. Non visible par le chef de chantier.
+            </p>
+          </div>
+          <div className="p-4">
+            <textarea
+              value={form.notes_ra}
+              disabled={disabled}
+              onChange={(e) =>
+                setForm((f) => (f ? { ...f, notes_ra: e.target.value } : f))
+              }
+              rows={5}
+              placeholder="Ex : reunion de chantier hebdo le mercredi 10h, attention au planning client, etc."
+              className="w-full text-sm border border-border-std rounded px-3 py-2 bg-white disabled:bg-bg-cell disabled:text-text-tertiary"
+            />
+          </div>
+        </section>
+
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={submit}
+            disabled={disabled || mut.isPending}
+            className={cn(
+              "px-4 py-2 text-sm font-medium rounded text-white",
+              "bg-vinci-blue hover:bg-vinci-blue/90",
+              "disabled:opacity-40 disabled:cursor-not-allowed"
+            )}
+          >
+            {mut.isPending ? "Enregistrement..." : "Enregistrer"}
+          </button>
+          {saveOk && (
+            <span className="text-xs text-status-ok flex items-center gap-1">
+              <CheckCircle2 size={14} /> {saveOk}
+            </span>
+          )}
+          {saveErr && (
+            <span className="text-xs text-vinci-red">{saveErr}</span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }

@@ -3,7 +3,9 @@ import {
   AlertTriangle,
   ArrowUpRight,
   Boxes,
-  CheckCircle2,
+  Calendar,
+  Layers,
+  Ruler,
   ShieldAlert,
   TrendingUp,
 } from "lucide-react";
@@ -11,12 +13,19 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getDashboardSummary } from "@/api/dashboard";
 import { cn } from "@/lib/utils";
-import type { DashboardProjectSummary } from "@/types";
+import type {
+  DashboardProjectSummary,
+  ProjectPhase,
+  ProjectPriorite,
+} from "@/types";
 
 /**
  * Tableau de bord multi-projets (US-RA-01).
- * Le RA voit en un coup d'oeil les projets actifs, l'avancement chantier,
- * les ecarts ouverts, les alertes stock, et peut drill-down vers chaque projet.
+ *
+ * Hierarchie visuelle :
+ * 1. Bandeau compact en haut = totaux globaux (lecture rapide, filtres-raccourcis cliquables).
+ * 2. Cartes projet en grand = un mini-dashboard par projet, KPI cliquables qui
+ *    naviguent directement vers l'onglet concerne du projet (?tab=<id>).
  */
 export default function DashboardPage() {
   const { data, isLoading, isError } = useQuery({
@@ -26,23 +35,38 @@ export default function DashboardPage() {
   });
 
   const [filter, setFilter] = useState<
-    "tous" | "alertes" | "ecarts" | "en_cours"
+    "tous" | "alertes" | "ecarts" | "en_cours" | "critique"
   >("tous");
   const [sortBy, setSortBy] = useState<
-    "alertes" | "avancement_asc" | "avancement_desc" | "ecarts" | "activite"
+    | "alertes"
+    | "avancement_asc"
+    | "avancement_desc"
+    | "ecarts"
+    | "activite"
+    | "priorite"
+    | "deadline"
   >("alertes");
 
   const projets = useMemo(() => {
     if (!data) return [];
     let list = [...data.projets];
     if (filter === "alertes")
-      list = list.filter((p) => p.nb_alertes_stock > 0 || p.nb_ecarts_bloquants > 0);
+      list = list.filter(
+        (p) => p.nb_alertes_stock > 0 || p.nb_ecarts_bloquants > 0
+      );
     if (filter === "ecarts") list = list.filter((p) => p.nb_ecarts_ouverts > 0);
     if (filter === "en_cours")
       list = list.filter((p) => p.avancement_pct > 0 && p.avancement_pct < 100);
+    if (filter === "critique")
+      list = list.filter((p) => p.priorite === "critique");
 
     const score = (p: DashboardProjectSummary) =>
       p.nb_ecarts_bloquants * 100 + p.nb_alertes_stock * 10 + p.nb_ecarts_ouverts;
+    const priWeight: Record<ProjectPriorite, number> = {
+      critique: 3,
+      standard: 2,
+      faible: 1,
+    };
 
     switch (sortBy) {
       case "alertes":
@@ -64,6 +88,16 @@ export default function DashboardPage() {
           return db - da;
         });
         break;
+      case "priorite":
+        list.sort((a, b) => priWeight[b.priorite] - priWeight[a.priorite]);
+        break;
+      case "deadline":
+        list.sort((a, b) => {
+          const da = a.date_fin_prevue ? Date.parse(a.date_fin_prevue) : Infinity;
+          const db = b.date_fin_prevue ? Date.parse(b.date_fin_prevue) : Infinity;
+          return da - db;
+        });
+        break;
     }
     return list;
   }, [data, filter, sortBy]);
@@ -71,7 +105,9 @@ export default function DashboardPage() {
   if (isLoading) {
     return (
       <div className="flex-1 min-h-0 overflow-auto p-6">
-        <p className="text-sm text-text-tertiary">Chargement du tableau de bord...</p>
+        <p className="text-sm text-text-tertiary">
+          Chargement du tableau de bord...
+        </p>
       </div>
     );
   }
@@ -86,110 +122,128 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="flex-1 min-h-0 overflow-auto p-4 sm:p-6 space-y-5">
+    <div className="flex-1 min-h-0 overflow-auto p-4 sm:p-6 space-y-4">
       <div>
         <h1 className="text-lg sm:text-xl font-semibold text-text-primary">
           Tableau de bord
         </h1>
         <p className="text-xs text-text-tertiary mt-0.5">
-          {data.nb_projets_actifs} projet{data.nb_projets_actifs > 1 ? "s" : ""}{" "}
-          actif{data.nb_projets_actifs > 1 ? "s" : ""} ·{" "}
-          {data.nb_projets} au total
+          Vue d'ensemble du portefeuille de projets. Chaque carte ci-dessous
+          est cliquable : ouvre la zone concernee du projet.
         </p>
       </div>
 
-      {/* KPI globaux — cliquables, chacun applique un filtre rapide */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <KpiBlock
-          icon={<TrendingUp size={16} />}
-          label="Avancement moyen"
-          value={`${data.avancement_moyen_pct.toFixed(0)}%`}
-          tone="blue"
-          active={filter === "en_cours"}
-          onClick={() =>
-            setFilter(filter === "en_cours" ? "tous" : "en_cours")
-          }
-          actionHint="Voir les chantiers en cours"
-        />
-        <KpiBlock
-          icon={<ShieldAlert size={16} />}
-          label="Ecarts ouverts"
-          sub={
-            data.nb_ecarts_bloquants_total > 0
-              ? `${data.nb_ecarts_bloquants_total} bloquant${
-                  data.nb_ecarts_bloquants_total > 1 ? "s" : ""
-                }`
-              : undefined
-          }
-          value={data.nb_ecarts_ouverts_total}
-          tone={data.nb_ecarts_bloquants_total > 0 ? "red" : "neutral"}
-          active={filter === "ecarts"}
-          onClick={() => setFilter(filter === "ecarts" ? "tous" : "ecarts")}
-          actionHint="Filtrer les projets avec ecarts"
-        />
-        <KpiBlock
-          icon={<Boxes size={16} />}
-          label="Alertes stock"
-          value={data.nb_alertes_stock_total}
-          tone={data.nb_alertes_stock_total > 0 ? "red" : "neutral"}
-          active={filter === "alertes"}
-          onClick={() =>
-            setFilter(filter === "alertes" ? "tous" : "alertes")
-          }
-          actionHint="Filtrer les projets avec alertes critiques"
-        />
-        <KpiBlock
-          icon={<CheckCircle2 size={16} />}
-          label="Cable tire / prevu"
-          value={`${formatMeters(data.longueur_realisee_totale_m)} m`}
-          sub={`sur ${formatMeters(data.longueur_prevue_totale_m)} m`}
-          tone="neutral"
-          active={sortBy === "avancement_desc"}
-          onClick={() =>
-            setSortBy(
-              sortBy === "avancement_desc" ? "alertes" : "avancement_desc"
-            )
-          }
-          actionHint="Trier par avancement decroissant"
-        />
+      {/* Bandeau compact totaux globaux ----------------------------------- */}
+      <div className="bg-white border border-border-std rounded-lg">
+        <div className="px-3 sm:px-4 py-2.5 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3 text-xs">
+          <TotalChip
+            icon={<Layers size={13} />}
+            label="Projets"
+            value={`${data.nb_projets_actifs} / ${data.nb_projets}`}
+            sub="actifs"
+            active={filter === "tous"}
+            onClick={() => setFilter("tous")}
+          />
+          <TotalChip
+            icon={<TrendingUp size={13} />}
+            label="Avancement moyen"
+            value={`${data.avancement_moyen_pct.toFixed(0)} %`}
+            active={filter === "en_cours"}
+            onClick={() =>
+              setFilter(filter === "en_cours" ? "tous" : "en_cours")
+            }
+          />
+          <TotalChip
+            icon={<ShieldAlert size={13} />}
+            label="Ecarts ouverts"
+            value={data.nb_ecarts_ouverts_total}
+            sub={
+              data.nb_ecarts_bloquants_total > 0
+                ? `${data.nb_ecarts_bloquants_total} bloquants`
+                : undefined
+            }
+            tone={data.nb_ecarts_bloquants_total > 0 ? "red" : "neutral"}
+            active={filter === "ecarts"}
+            onClick={() => setFilter(filter === "ecarts" ? "tous" : "ecarts")}
+          />
+          <TotalChip
+            icon={<Boxes size={13} />}
+            label="Alertes stock"
+            value={data.nb_alertes_stock_total}
+            tone={data.nb_alertes_stock_total > 0 ? "red" : "neutral"}
+            active={filter === "alertes"}
+            onClick={() => setFilter(filter === "alertes" ? "tous" : "alertes")}
+          />
+          <TotalChip
+            icon={<Ruler size={13} />}
+            label="Cable tire / prevu"
+            value={`${formatMeters(data.longueur_realisee_totale_m)} m`}
+            sub={`sur ${formatMeters(data.longueur_prevue_totale_m)} m`}
+          />
+          <TotalChip
+            icon={<AlertTriangle size={13} />}
+            label="Critiques"
+            value={data.projets.filter((p) => p.priorite === "critique").length}
+            tone="red"
+            active={filter === "critique"}
+            onClick={() =>
+              setFilter(filter === "critique" ? "tous" : "critique")
+            }
+          />
+        </div>
       </div>
 
-      {/* Filtres et tri */}
+      {/* Filtres complets + tri ------------------------------------------- */}
       <div className="flex flex-wrap items-end gap-3">
-        <div className="flex-1 min-w-[140px]">
-          <label className="block text-[11px] text-text-tertiary mb-1">Filtrer</label>
+        <div className="flex-1 min-w-[150px]">
+          <label className="block text-[11px] text-text-tertiary mb-1">
+            Filtrer
+          </label>
           <select
             value={filter}
-            onChange={(e) =>
-              setFilter(e.target.value as typeof filter)
-            }
+            onChange={(e) => setFilter(e.target.value as typeof filter)}
             className="w-full text-xs border border-border-std rounded px-2 py-1.5 bg-white"
           >
             <option value="tous">Tous les projets</option>
             <option value="alertes">Avec alertes (bloquants / stock)</option>
             <option value="ecarts">Avec ecarts ouverts</option>
             <option value="en_cours">Chantier en cours</option>
+            <option value="critique">Priorite critique</option>
           </select>
         </div>
-        <div className="flex-1 min-w-[160px]">
-          <label className="block text-[11px] text-text-tertiary mb-1">Trier par</label>
+        <div className="flex-1 min-w-[170px]">
+          <label className="block text-[11px] text-text-tertiary mb-1">
+            Trier par
+          </label>
           <select
             value={sortBy}
-            onChange={(e) =>
-              setSortBy(e.target.value as typeof sortBy)
-            }
+            onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
             className="w-full text-xs border border-border-std rounded px-2 py-1.5 bg-white"
           >
             <option value="alertes">Criticite (bloquants d'abord)</option>
+            <option value="priorite">Priorite RA</option>
+            <option value="deadline">Echeance la plus proche</option>
             <option value="avancement_asc">Avancement croissant</option>
             <option value="avancement_desc">Avancement decroissant</option>
             <option value="ecarts">Ecarts ouverts</option>
             <option value="activite">Activite recente</option>
           </select>
         </div>
+        {(filter !== "tous" || sortBy !== "alertes") && (
+          <button
+            type="button"
+            onClick={() => {
+              setFilter("tous");
+              setSortBy("alertes");
+            }}
+            className="text-xs px-2 py-1.5 text-vinci-red hover:underline self-end"
+          >
+            Reinitialiser
+          </button>
+        )}
       </div>
 
-      {/* Grille des projets */}
+      {/* Grille cartes projet --------------------------------------------- */}
       {projets.length === 0 ? (
         <div className="border border-dashed border-border-std rounded p-8 text-center">
           <p className="text-sm text-text-secondary">
@@ -197,7 +251,7 @@ export default function DashboardPage() {
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
           {projets.map((p) => (
             <ProjectCard key={p.id} project={p} />
           ))}
@@ -207,31 +261,29 @@ export default function DashboardPage() {
   );
 }
 
-function KpiBlock({
+// ---------------------------------------------------------------------------
+// Bandeau totaux : composant chip compact, cliquable pour filtrer
+// ---------------------------------------------------------------------------
+
+function TotalChip({
   icon,
   label,
   value,
   sub,
-  tone,
+  tone = "neutral",
   active,
   onClick,
-  actionHint,
 }: {
   icon: React.ReactNode;
   label: string;
   value: string | number;
   sub?: string;
-  tone: "blue" | "red" | "neutral";
+  tone?: "neutral" | "red";
   active?: boolean;
   onClick?: () => void;
-  actionHint?: string;
 }) {
-  const toneClass =
-    tone === "blue"
-      ? "bg-vinci-blue/5 border-vinci-blue/20 text-vinci-blue"
-      : tone === "red"
-      ? "bg-vinci-red/5 border-vinci-red/30 text-vinci-red"
-      : "bg-bg-cell border-border-std text-text-primary";
+  const toneText =
+    tone === "red" ? "text-vinci-red" : "text-text-primary";
   const interactive = !!onClick;
   return (
     <button
@@ -239,87 +291,160 @@ function KpiBlock({
       onClick={onClick}
       disabled={!interactive}
       aria-pressed={active}
-      title={actionHint}
       className={cn(
-        "border rounded p-3 text-left transition-all",
-        toneClass,
-        interactive &&
-          "cursor-pointer hover:shadow-sm hover:-translate-y-0.5 active:translate-y-0",
-        active && "ring-2 ring-vinci-blue/30",
-        !interactive && "cursor-default"
+        "flex items-center gap-2 text-left rounded px-2 py-1.5 transition-colors",
+        interactive
+          ? "hover:bg-vinci-blue/5 cursor-pointer"
+          : "cursor-default",
+        active && "bg-vinci-blue/10 ring-1 ring-vinci-blue/30"
       )}
     >
-      <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide opacity-80">
+      <span
+        className={cn(
+          "shrink-0 inline-flex items-center justify-center w-6 h-6 rounded",
+          tone === "red"
+            ? "bg-vinci-red/10 text-vinci-red"
+            : "bg-vinci-blue/10 text-vinci-blue"
+        )}
+      >
         {icon}
-        {label}
+      </span>
+      <div className="min-w-0">
+        <div className={cn("font-semibold text-sm tabular-nums", toneText)}>
+          {value}
+        </div>
+        <div className="text-[10px] text-text-tertiary leading-tight">
+          {label}
+          {sub && <span className="block">{sub}</span>}
+        </div>
       </div>
-      <div className="text-xl sm:text-2xl font-bold mt-1">{value}</div>
-      {sub && <div className="text-[11px] opacity-70 mt-0.5">{sub}</div>}
     </button>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Carte projet avec mini-dashboard interne
+// ---------------------------------------------------------------------------
+
+const PHASE_LABELS: Record<ProjectPhase, string> = {
+  etudes: "Etudes",
+  approvisionnement: "Appro",
+  pose: "Pose",
+  mise_en_service: "MES",
+  reception: "Reception",
+};
+
+const PHASE_BG: Record<ProjectPhase, string> = {
+  etudes: "bg-blue-100 text-blue-800",
+  approvisionnement: "bg-yellow-100 text-yellow-800",
+  pose: "bg-vinci-blue/10 text-vinci-blue",
+  mise_en_service: "bg-purple-100 text-purple-800",
+  reception: "bg-green-100 text-green-800",
+};
+
+const PRIORITE_BG: Record<ProjectPriorite, string> = {
+  critique: "bg-vinci-red text-white",
+  standard: "bg-bg-cell text-text-secondary",
+  faible: "bg-bg-cell text-text-tertiary",
+};
 
 function ProjectCard({ project }: { project: DashboardProjectSummary }) {
   const navigate = useNavigate();
   const hasBlockers =
     project.nb_ecarts_bloquants > 0 || project.nb_alertes_stock > 0;
+  const isCritique = project.priorite === "critique";
+
+  const goTab = (tab: string) => navigate(`/projects/${project.id}?tab=${tab}`);
+
+  const deadlineInfo = project.date_fin_prevue
+    ? describeDeadline(project.date_fin_prevue)
+    : null;
 
   return (
-    <button
-      type="button"
-      onClick={() => navigate(`/projects/${project.id}`)}
+    <div
       className={cn(
-        "text-left bg-white border rounded-lg p-4 transition-all hover:shadow-md",
-        hasBlockers
-          ? "border-vinci-red/40 hover:border-vinci-red"
-          : "border-border-std hover:border-vinci-blue/40"
+        "bg-white border rounded-lg overflow-hidden transition-shadow hover:shadow-md",
+        isCritique
+          ? "border-vinci-red/50"
+          : hasBlockers
+          ? "border-vinci-red/30"
+          : "border-border-std"
       )}
     >
-      <div className="flex items-start justify-between gap-2 mb-2">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] uppercase tracking-wide text-text-tertiary">
-              {project.code}
-            </span>
-            <span
-              className={cn(
-                "text-[10px] px-1.5 py-0.5 rounded uppercase tracking-wide",
-                project.status === "actif"
-                  ? "bg-green-100 text-green-800"
-                  : "bg-bg-cell text-text-tertiary"
-              )}
-            >
-              {project.status}
-            </span>
-            {project.indice_caneco && (
-              <span className="text-[10px] text-text-tertiary">
-                Indice {project.indice_caneco}
+      {/* Header cliquable -> page projet */}
+      <button
+        type="button"
+        onClick={() => navigate(`/projects/${project.id}`)}
+        className="w-full text-left px-4 py-3 border-b border-border-std hover:bg-vinci-blue/5 transition-colors"
+      >
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[10px] uppercase tracking-wide text-text-tertiary">
+                {project.code}
               </span>
-            )}
+              <span
+                className={cn(
+                  "text-[10px] px-1.5 py-0.5 rounded uppercase tracking-wide",
+                  project.status === "actif"
+                    ? "bg-green-100 text-green-800"
+                    : "bg-bg-cell text-text-tertiary"
+                )}
+              >
+                {project.status}
+              </span>
+              <span
+                className={cn(
+                  "text-[10px] px-1.5 py-0.5 rounded font-medium",
+                  PHASE_BG[project.phase]
+                )}
+              >
+                {PHASE_LABELS[project.phase]}
+              </span>
+              <span
+                className={cn(
+                  "text-[10px] px-1.5 py-0.5 rounded font-medium",
+                  PRIORITE_BG[project.priorite]
+                )}
+              >
+                {project.priorite}
+              </span>
+              {project.indice_caneco && (
+                <span className="text-[10px] text-text-tertiary">
+                  Indice {project.indice_caneco}
+                </span>
+              )}
+            </div>
+            <h3 className="text-base font-semibold text-vinci-blue truncate mt-1">
+              {project.name}
+            </h3>
+            <p className="text-xs text-text-tertiary truncate">
+              {project.client ?? "—"}
+              {project.agency ? ` · ${project.agency}` : ""}
+            </p>
           </div>
-          <h3 className="text-sm font-semibold text-vinci-blue truncate mt-0.5">
-            {project.name}
-          </h3>
-          <p className="text-xs text-text-tertiary truncate">
-            {project.client ?? "—"}
-            {project.agency ? ` · ${project.agency}` : ""}
-          </p>
+          <ArrowUpRight size={18} className="text-text-tertiary shrink-0 mt-1" />
         </div>
-        <ArrowUpRight size={16} className="text-text-tertiary shrink-0" />
-      </div>
+      </button>
 
-      {/* Avancement chantier */}
-      <div className="mt-3">
-        <div className="flex items-center justify-between text-[11px] text-text-tertiary mb-1">
+      {/* Avancement compose ------------------------------------------------ */}
+      <button
+        type="button"
+        onClick={() => goTab("saisie-chantier")}
+        title="Ouvrir la saisie chantier"
+        className="w-full text-left px-4 py-3 border-b border-border-std hover:bg-vinci-blue/5 transition-colors"
+      >
+        <div className="flex items-center justify-between text-[11px] text-text-tertiary mb-1.5">
           <span>
-            Avancement chantier ({project.nb_circuits_saisis} /{" "}
-            {project.nb_circuits} circuits)
+            Avancement projet — tirets {project.pct_tirets.toFixed(0)} %
+            {" · "}
+            validation {project.validation_pct.toFixed(0)} %
           </span>
-          <span className="font-semibold text-text-primary">
-            {project.avancement_pct.toFixed(0)}%
+          <span className="font-semibold text-text-primary text-sm">
+            {project.avancement_pct.toFixed(0)} %
           </span>
         </div>
-        <div className="h-2 bg-bg-cell rounded overflow-hidden">
+        <div className="h-2.5 bg-bg-cell rounded overflow-hidden">
           <div
             className={cn(
               "h-full transition-all",
@@ -332,87 +457,150 @@ function ProjectCard({ project }: { project: DashboardProjectSummary }) {
             style={{ width: `${Math.min(100, project.avancement_pct)}%` }}
           />
         </div>
-        <div className="text-[10px] text-text-tertiary mt-1">
-          {formatMeters(project.longueur_realisee_m)} m tires /{" "}
-          {formatMeters(project.longueur_prevue_m)} m prevus
+        <div className="text-[10px] text-text-tertiary mt-1.5">
+          {project.nb_circuits_saisis} / {project.nb_circuits} circuits saisis{" "}
+          · {formatMeters(project.longueur_realisee_m)} m tires sur{" "}
+          {formatMeters(project.longueur_prevue_m)} m
         </div>
-      </div>
+      </button>
 
-      {/* Indicateurs critiques */}
-      <div className="flex flex-wrap gap-2 mt-3">
-        <PillStat
-          icon={<ShieldAlert size={11} />}
+      {/* Grille KPI cliquables --------------------------------------------- */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-border-std">
+        <MiniKpi
+          icon={<ShieldAlert size={13} />}
           label="Ecarts"
           value={project.nb_ecarts_ouverts}
           critical={project.nb_ecarts_bloquants > 0}
-          criticalSuffix={
+          hint={
             project.nb_ecarts_bloquants > 0
-              ? `${project.nb_ecarts_bloquants} bloquant${
-                  project.nb_ecarts_bloquants > 1 ? "s" : ""
-                }`
-              : undefined
+              ? `${project.nb_ecarts_bloquants} bloquants`
+              : "Verifications"
           }
+          onClick={() => goTab("verifications")}
         />
-        <PillStat
-          icon={<Boxes size={11} />}
+        <MiniKpi
+          icon={<Boxes size={13} />}
           label="Alertes stock"
           value={project.nb_alertes_stock}
           critical={project.nb_alertes_stock > 0}
+          hint="Stock cables"
+          onClick={() => goTab("stock-cables")}
         />
-        <PillStat
-          icon={<TrendingUp size={11} />}
+        <MiniKpi
+          icon={<Layers size={13} />}
           label="Tableaux"
           value={project.nb_tableaux}
+          hint="Voir les tableaux"
+          onClick={() => goTab("tableaux")}
+        />
+        <MiniKpi
+          icon={<Ruler size={13} />}
+          label="Carnet"
+          value={`${formatMeters(project.longueur_prevue_m)} m`}
+          hint="Carnet cables"
+          onClick={() => goTab("cable-book")}
+          small
         />
       </div>
 
-      {project.derniere_activite && (
-        <p className="text-[10px] text-text-tertiary mt-3">
-          Activite : {formatRelative(project.derniere_activite)}
-        </p>
-      )}
-    </button>
+      {/* Footer : deadline + activite ------------------------------------- */}
+      <div className="px-4 py-2 flex items-center justify-between text-[11px] text-text-tertiary bg-bg-cell/40">
+        {deadlineInfo ? (
+          <span
+            className={cn(
+              "flex items-center gap-1",
+              deadlineInfo.tone === "red" && "text-vinci-red font-medium",
+              deadlineInfo.tone === "amber" && "text-yellow-700"
+            )}
+          >
+            <Calendar size={11} />
+            {deadlineInfo.label}
+          </span>
+        ) : (
+          <span className="flex items-center gap-1 opacity-60">
+            <Calendar size={11} />
+            Aucune deadline
+          </span>
+        )}
+        {project.derniere_activite ? (
+          <span>Activite : {formatRelative(project.derniere_activite)}</span>
+        ) : (
+          <span className="opacity-60">Pas d'activite</span>
+        )}
+      </div>
+    </div>
   );
 }
 
-function PillStat({
+function MiniKpi({
   icon,
   label,
   value,
   critical,
-  criticalSuffix,
+  hint,
+  onClick,
+  small,
 }: {
   icon: React.ReactNode;
   label: string;
-  value: number;
+  value: number | string;
   critical?: boolean;
-  criticalSuffix?: string;
+  hint?: string;
+  onClick?: () => void;
+  small?: boolean;
 }) {
-  const hasValue = value > 0;
+  const hasValue = typeof value === "number" ? value > 0 : true;
   return (
-    <div
+    <button
+      type="button"
+      onClick={onClick}
+      title={hint}
       className={cn(
-        "inline-flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded border",
-        critical && hasValue
-          ? "bg-vinci-red/10 border-vinci-red/40 text-vinci-red"
-          : hasValue
-          ? "bg-vinci-blue/5 border-vinci-blue/20 text-vinci-blue"
-          : "bg-bg-cell border-border-std text-text-tertiary"
+        "bg-white p-2.5 text-left transition-colors group",
+        onClick ? "hover:bg-vinci-blue/5 cursor-pointer" : "cursor-default"
       )}
-      title={criticalSuffix}
     >
-      {icon}
-      <span className="font-medium">{value}</span>
-      <span className="opacity-80">{label}</span>
-      {criticalSuffix && <AlertTriangle size={10} className="ml-0.5" />}
-    </div>
+      <div
+        className={cn(
+          "flex items-center gap-1 text-[10px] uppercase tracking-wide",
+          critical && hasValue
+            ? "text-vinci-red"
+            : hasValue
+            ? "text-vinci-blue"
+            : "text-text-tertiary"
+        )}
+      >
+        {icon}
+        <span>{label}</span>
+        {critical && hasValue && (
+          <AlertTriangle size={10} className="ml-auto" />
+        )}
+      </div>
+      <div
+        className={cn(
+          "font-bold mt-0.5 tabular-nums",
+          small ? "text-sm" : "text-lg",
+          critical && hasValue
+            ? "text-vinci-red"
+            : "text-text-primary"
+        )}
+      >
+        {value}
+      </div>
+      {hint && (
+        <div className="text-[10px] text-text-tertiary mt-0.5 truncate flex items-center gap-0.5 group-hover:text-vinci-blue transition-colors">
+          {hint}
+          <ArrowUpRight size={10} className="opacity-60" />
+        </div>
+      )}
+    </button>
   );
 }
 
 function formatMeters(m: number): string {
   return new Intl.NumberFormat("fr-FR", {
     minimumFractionDigits: 0,
-    maximumFractionDigits: 1,
+    maximumFractionDigits: 0,
   }).format(m);
 }
 
@@ -425,3 +613,20 @@ function formatRelative(iso: string): string {
   if (sec < 86400) return `il y a ${Math.round(sec / 3600)} h`;
   return d.toLocaleDateString("fr-FR");
 }
+
+function describeDeadline(
+  iso: string
+): { label: string; tone: "neutral" | "amber" | "red" } {
+  const d = new Date(iso);
+  const days = Math.round((d.getTime() - Date.now()) / 86400_000);
+  const fmt = d.toLocaleDateString("fr-FR", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+  if (days < 0)
+    return { label: `Echeance depassee : ${fmt}`, tone: "red" };
+  if (days <= 14) return { label: `Fin dans ${days} j (${fmt})`, tone: "amber" };
+  return { label: `Fin prevue : ${fmt}`, tone: "neutral" };
+}
+

@@ -6,9 +6,9 @@ avec les longueurs reellement tirees.
 """
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, String, UniqueConstraint, func
+from sqlalchemy import Date, DateTime, Float, ForeignKey, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -48,6 +48,10 @@ class CableStockItem(Base):
     seuil_alerte_min_m: Mapped[float] = mapped_column(
         Float, nullable=False, default=0.0
     )
+
+    # Dates saisies par le RA (le chef de chantier les voit en lecture seule)
+    date_achat: Mapped[date | None] = mapped_column(Date)
+    date_livraison_prevue: Mapped[date | None] = mapped_column(Date)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

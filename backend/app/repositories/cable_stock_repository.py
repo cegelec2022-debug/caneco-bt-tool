@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 from sqlalchemy.orm import Session
 
 from app.models.cable_stock import CableStockItem
+
+# Sentinelle pour distinguer "ne pas toucher" et "mettre a None".
+# Les dates sont nullables : on a besoin de pouvoir explicitement effacer.
+_UNSET: object = object()
 
 
 def get_or_create(
@@ -48,6 +54,8 @@ def update_quantities(
     quantite_achetee: float | None = None,
     quantite_livree: float | None = None,
     seuil_alerte_min_m: float | None = None,
+    date_achat: date | None | object = _UNSET,
+    date_livraison_prevue: date | None | object = _UNSET,
 ) -> CableStockItem:
     if quantite_achetee is not None:
         item.quantite_achetee = quantite_achetee
@@ -55,6 +63,10 @@ def update_quantities(
         item.quantite_livree = quantite_livree
     if seuil_alerte_min_m is not None:
         item.seuil_alerte_min_m = seuil_alerte_min_m
+    if date_achat is not _UNSET:
+        item.date_achat = date_achat  # type: ignore[assignment]
+    if date_livraison_prevue is not _UNSET:
+        item.date_livraison_prevue = date_livraison_prevue  # type: ignore[assignment]
     db.commit()
     db.refresh(item)
     return item

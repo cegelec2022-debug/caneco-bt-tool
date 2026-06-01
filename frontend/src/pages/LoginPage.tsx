@@ -56,9 +56,12 @@ export default function LoginPage() {
   const {
     register,
     handleSubmit,
-    setValue,
+    reset,
     formState: { errors, isSubmitting },
-  } = useForm<FormData>({ resolver: zodResolver(schema) });
+  } = useForm<FormData>({
+    resolver: zodResolver(schema),
+    defaultValues: { email: "", password: "" },
+  });
 
   async function onSubmit(data: FormData) {
     setServerError(null);
@@ -79,8 +82,10 @@ export default function LoginPage() {
   }
 
   function fillAccount(email: string) {
-    setValue("email", email, { shouldValidate: true });
-    setValue("password", "Demo2026!", { shouldValidate: true });
+    reset(
+      { email, password: "Demo2026!" },
+      { keepErrors: false, keepDirty: false }
+    );
   }
 
   return (
@@ -97,8 +102,8 @@ export default function LoginPage() {
       </header>
 
       <main
-        className="relative flex-1 flex items-center justify-center bg-cover bg-center p-6"
-        style={{ backgroundImage: "url('/vinci-login-bg.png')" }}
+        className="relative flex-1 flex items-center justify-center bg-vinci-blue bg-cover bg-center p-6"
+        style={{ backgroundImage: "url('/vinci-login-bg.webp')" }}
       >
         {/* Voile sombre VINCI pour garder le formulaire lisible par-dessus la photo */}
         <div className="absolute inset-0 bg-vinci-blue/40" aria-hidden="true" />

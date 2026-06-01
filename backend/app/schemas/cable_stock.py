@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
 class CableStockItemUpsert(BaseModel):
     """Payload pour identifier une reference et fournir des quantites.
 
-    Le RA ou le Chef de Chantier peut ajuster ces valeurs. Une reference est
-    identifiee par (type_cable, section_label, ame).
+    Le RA ou le BE proprietaire peut tout modifier. Le chef de chantier ne peut
+    ajuster que ``quantite_livree`` et ``seuil_alerte_min_m`` : la verification
+    est faite cote routeur en fonction du role.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -21,6 +24,8 @@ class CableStockItemUpsert(BaseModel):
     quantite_achetee: float | None = Field(default=None, ge=0, le=10_000_000)
     quantite_livree: float | None = Field(default=None, ge=0, le=10_000_000)
     seuil_alerte_min_m: float | None = Field(default=None, ge=0, le=1_000_000)
+    date_achat: date | None = None
+    date_livraison_prevue: date | None = None
 
 
 class CableStockItemResponse(BaseModel):
@@ -39,6 +44,8 @@ class CableStockItemResponse(BaseModel):
     stock_restant: float
     seuil_alerte_min_m: float
     en_alerte: bool
+    date_achat: date | None = None
+    date_livraison_prevue: date | None = None
 
 
 class CableStockReport(BaseModel):
