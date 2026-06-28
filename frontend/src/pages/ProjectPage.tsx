@@ -2955,16 +2955,8 @@ function RunCard({
                   {run.high_count} a corriger
                 </span>
               )}
-              {run.medium_count !== null && run.medium_count > 0 && (
-                <span className="text-[10px] text-yellow-700 bg-yellow-50 px-1.5 py-0.5 rounded">
-                  {run.medium_count} a signaler
-                </span>
-              )}
-              {run.info_count !== null && run.info_count > 0 && (
-                <span className="text-[10px] text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded">
-                  {run.info_count} info
-                </span>
-              )}
+              {/* Pastilles "a signaler" / "info" masquees en mode presentation pour rester sobre.
+                  Les volumes restent disponibles via le filtre severite. */}
             </div>
           )}
           {run.error_message && (
@@ -3233,13 +3225,13 @@ function VerificationsTab({ projectId }: { projectId: string }) {
     return true;
   });
 
-  // KPI du run selectionne
+  // KPI du run selectionne — mode presentation : seuls Bloquants et A corriger sont affiches.
+  // Les categories A signaler / Info restent dans le modele (filtres internes, vue ingenieur)
+  // mais n'apparaissent plus comme cartes de KPI pour eviter une lecture parasite par le jury / client.
   const kpis = runDetail
     ? [
         { label: "Bloquants", severity: "BLOQUANT" as const, count: runDetail.critical_count ?? 0, color: "text-red-700", bg: "bg-red-50 border-red-200", ring: "ring-red-400" },
         { label: "A corriger", severity: "A_CORRIGER" as const, count: runDetail.high_count ?? 0, color: "text-orange-700", bg: "bg-orange-50 border-orange-200", ring: "ring-orange-400" },
-        { label: "A signaler", severity: "A_SIGNALER" as const, count: runDetail.medium_count ?? 0, color: "text-yellow-700", bg: "bg-yellow-50 border-yellow-200", ring: "ring-yellow-400" },
-        { label: "Info", severity: "INFO" as const, count: runDetail.info_count ?? 0, color: "text-blue-700", bg: "bg-blue-50 border-blue-200", ring: "ring-blue-400" },
       ]
     : [];
 
@@ -3307,8 +3299,8 @@ function VerificationsTab({ projectId }: { projectId: string }) {
       {/* Detail du run selectionne */}
       {selectedRunId && runDetail && (
         <div className="space-y-4">
-          {/* KPI cards — cliquables pour filtrer */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {/* KPI cards — cliquables pour filtrer (Bloquants + A corriger uniquement, mode presentation) */}
+          <div className="grid grid-cols-2 gap-3">
             {kpis.map((kpi) => {
               const active = filterSeverity === kpi.severity;
               return (
