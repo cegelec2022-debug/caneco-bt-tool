@@ -2904,11 +2904,13 @@ function GapStatusBadge({ status }: { status: GapStatus }) {
 function RunCard({
   run,
   isSelected,
+  showAllSeverities,
   onSelect,
   onDelete,
 }: {
   run: VerificationRun;
   isSelected: boolean;
+  showAllSeverities: boolean;
   onSelect: () => void;
   onDelete: () => void;
 }) {
@@ -2955,8 +2957,16 @@ function RunCard({
                   {run.high_count} a corriger
                 </span>
               )}
-              {/* Pastilles "a signaler" / "info" masquees en mode presentation pour rester sobre.
-                  Les volumes restent disponibles via le filtre severite. */}
+              {showAllSeverities && run.medium_count !== null && run.medium_count > 0 && (
+                <span className="text-[10px] text-yellow-700 bg-yellow-50 px-1.5 py-0.5 rounded">
+                  {run.medium_count} a signaler
+                </span>
+              )}
+              {showAllSeverities && run.info_count !== null && run.info_count > 0 && (
+                <span className="text-[10px] text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded">
+                  {run.info_count} info
+                </span>
+              )}
             </div>
           )}
           {run.error_message && (
@@ -3133,6 +3143,14 @@ function VerificationsTab({ projectId }: { projectId: string }) {
   const [engineerView, setEngineerView] = useState<boolean>(true);
   const [confirmDeleteRunId, setConfirmDeleteRunId] = useState<string | null>(null);
   const [selectedGap, setSelectedGap] = useState<Gap | null>(null);
+  // Mode complet : reaffiche les KPI "A signaler" / "Info" et les pastilles correspondantes
+  // dans l'historique des runs. Off par defaut (mode presentation), persiste en localStorage.
+  const [showAllSeverities, setShowAllSeverities] = useState<boolean>(() => {
+    try { return localStorage.getItem("caneco_show_all_severities") === "1"; } catch { return false; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem("caneco_show_all_severities", showAllSeverities ? "1" : "0"); } catch { /* noop */ }
+  }, [showAllSeverities]);
 
   // Lancer un run
   const [showLaunch, setShowLaunch] = useState(false);
@@ -3225,13 +3243,16 @@ function VerificationsTab({ projectId }: { projectId: string }) {
     return true;
   });
 
-  // KPI du run selectionne — mode presentation : seuls Bloquants et A corriger sont affiches.
-  // Les categories A signaler / Info restent dans le modele (filtres internes, vue ingenieur)
-  // mais n'apparaissent plus comme cartes de KPI pour eviter une lecture parasite par le jury / client.
+  // KPI du run selectionne — par defaut on n'affiche que Bloquants + A corriger.
+  // Le mode complet (toggle "Mode complet" dans le header) reaffiche A signaler + Info.
   const kpis = runDetail
     ? [
         { label: "Bloquants", severity: "BLOQUANT" as const, count: runDetail.critical_count ?? 0, color: "text-red-700", bg: "bg-red-50 border-red-200", ring: "ring-red-400" },
         { label: "A corriger", severity: "A_CORRIGER" as const, count: runDetail.high_count ?? 0, color: "text-orange-700", bg: "bg-orange-50 border-orange-200", ring: "ring-orange-400" },
+        ...(showAllSeverities ? [
+          { label: "A signaler", severity: "A_SIGNALER" as const, count: runDetail.medium_count ?? 0, color: "text-yellow-700", bg: "bg-yellow-50 border-yellow-200", ring: "ring-yellow-400" },
+          { label: "Info", severity: "INFO" as const, count: runDetail.info_count ?? 0, color: "text-blue-700", bg: "bg-blue-50 border-blue-200", ring: "ring-blue-400" },
+        ] : []),
       ]
     : [];
 
@@ -3264,13 +3285,32 @@ function VerificationsTab({ projectId }: { projectId: string }) {
       {/* Header + bouton lancer */}
       <div className="flex items-center justify-between gap-4">
         <h3 className="text-sm font-semibold text-text-primary">Historique des verifications</h3>
-        <button
-          onClick={() => setShowLaunch(true)}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-vinci-blue text-white rounded hover:bg-vinci-blue/90 transition-colors"
-        >
-          <Play size={11} />
-          Lancer une verification
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowAllSeverities((v) => !v)}
+            title={
+              showAllSeverities
+                ? "Mode complet actif : KPI et pastilles A signaler / Info visibles. Cliquer pour repasser en mode presentation."
+                : "Mode presentation actif : seuls Bloquants et A corriger sont visibles. Cliquer pour afficher A signaler et Info."
+            }
+            className={cn(
+              "text-[11px] px-2 py-1 rounded border transition-colors",
+              showAllSeverities
+                ? "border-vinci-blue text-vinci-blue bg-vinci-blue/5 hover:bg-vinci-blue/10"
+                : "border-border-std text-text-tertiary hover:text-vinci-blue hover:border-vinci-blue/40"
+            )}
+          >
+            {showAllSeverities ? "Mode complet" : "Mode presentation"}
+          </button>
+          <button
+            onClick={() => setShowLaunch(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-vinci-blue text-white rounded hover:bg-vinci-blue/90 transition-colors"
+          >
+            <Play size={11} />
+            Lancer une verification
+          </button>
+        </div>
       </div>
 
       {/* Liste des runs */}
@@ -3289,6 +3329,7 @@ function VerificationsTab({ projectId }: { projectId: string }) {
               key={r.id}
               run={r}
               isSelected={r.id === selectedRunId}
+              showAllSeverities={showAllSeverities}
               onSelect={() => setSelectedRunId(r.id)}
               onDelete={() => setConfirmDeleteRunId(r.id)}
             />
@@ -3299,8 +3340,8 @@ function VerificationsTab({ projectId }: { projectId: string }) {
       {/* Detail du run selectionne */}
       {selectedRunId && runDetail && (
         <div className="space-y-4">
-          {/* KPI cards — cliquables pour filtrer (Bloquants + A corriger uniquement, mode presentation) */}
-          <div className="grid grid-cols-2 gap-3">
+          {/* KPI cards — cliquables pour filtrer. 2 cards en mode presentation, 4 en mode complet. */}
+          <div className={cn("grid gap-3", showAllSeverities ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-2")}>
             {kpis.map((kpi) => {
               const active = filterSeverity === kpi.severity;
               return (
