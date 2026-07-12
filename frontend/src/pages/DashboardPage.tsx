@@ -1,20 +1,27 @@
 import { useQuery } from "@tanstack/react-query";
 import {
   AlertTriangle,
+  ArrowLeft,
   ArrowUpRight,
   Boxes,
   Calendar,
+  ChevronRight,
   Layers,
   Ruler,
   ShieldAlert,
   TrendingUp,
+  X,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { getCableStock } from "@/api/cable_stock";
 import { getDashboardSummary } from "@/api/dashboard";
+import { listGaps, listVerificationRuns } from "@/api/verification";
 import { cn } from "@/lib/utils";
 import type {
+  CableStockItemRow,
   DashboardProjectSummary,
+  Gap,
   ProjectPhase,
   ProjectPriorite,
 } from "@/types";
@@ -33,6 +40,12 @@ export default function DashboardPage() {
     queryFn: getDashboardSummary,
     staleTime: 30_000,
   });
+
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
+    null
+  );
+  const [showStockAlerts, setShowStockAlerts] = useState(false);
+  const [showBlockingGaps, setShowBlockingGaps] = useState(false);
 
   const [filter, setFilter] = useState<
     "tous" | "alertes" | "ecarts" | "en_cours" | "critique"
@@ -101,6 +114,28 @@ export default function DashboardPage() {
     }
     return list;
   }, [data, filter, sortBy]);
+
+  // Reset selection if filter/sort excludes the selected project, ou si le
+  // projet n'existe plus dans la liste filtree.
+  useEffect(() => {
+    if (
+      selectedProjectId &&
+      !projets.some((p) => p.id === selectedProjectId)
+    ) {
+      setSelectedProjectId(null);
+      setShowStockAlerts(false);
+    }
+  }, [projets, selectedProjectId]);
+
+  // Fermer les popovers quand on change de projet selectionne.
+  useEffect(() => {
+    setShowStockAlerts(false);
+    setShowBlockingGaps(false);
+  }, [selectedProjectId]);
+
+  const selectedProject = selectedProjectId
+    ? projets.find((p) => p.id === selectedProjectId) ?? null
+    : null;
 
   if (isLoading) {
     return (
@@ -243,19 +278,51 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* Grille cartes projet --------------------------------------------- */}
+      {/* Vue projets ------------------------------------------------------ */}
       {projets.length === 0 ? (
         <div className="border border-dashed border-border-std rounded p-8 text-center">
           <p className="text-sm text-text-secondary">
             Aucun projet ne correspond aux filtres.
           </p>
         </div>
-      ) : (
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-          {projets.map((p) => (
-            <ProjectCard key={p.id} project={p} />
-          ))}
+      ) : selectedProject ? (
+        <div className="space-y-3">
+          <button
+            type="button"
+            onClick={() => setSelectedProjectId(null)}
+            className="inline-flex items-center gap-1 text-xs text-vinci-blue hover:underline"
+          >
+            <ArrowLeft size={14} />
+            Retour a la liste des projets
+          </button>
+          <ProjectCard
+            project={selectedProject}
+            onStockAlertClick={() => {
+              setShowStockAlerts(true);
+              setShowBlockingGaps(false);
+            }}
+            onBlockerClick={() => {
+              setShowBlockingGaps(true);
+              setShowStockAlerts(false);
+            }}
+          />
+          {showBlockingGaps && (
+            <BlockingGapsPanel
+              projectId={selectedProject.id}
+              projectCode={selectedProject.code}
+              onClose={() => setShowBlockingGaps(false)}
+            />
+          )}
+          {showStockAlerts && (
+            <StockAlertsPanel
+              projectId={selectedProject.id}
+              projectCode={selectedProject.code}
+              onClose={() => setShowStockAlerts(false)}
+            />
+          )}
         </div>
+      ) : (
+        <ProjectsListView projects={projets} onSelect={setSelectedProjectId} />
       )}
     </div>
   );
@@ -348,7 +415,15 @@ const PRIORITE_BG: Record<ProjectPriorite, string> = {
   faible: "bg-bg-cell text-text-tertiary",
 };
 
-function ProjectCard({ project }: { project: DashboardProjectSummary }) {
+function ProjectCard({
+  project,
+  onStockAlertClick,
+  onBlockerClick,
+}: {
+  project: DashboardProjectSummary;
+  onStockAlertClick?: () => void;
+  onBlockerClick?: () => void;
+}) {
   const navigate = useNavigate();
   const hasBlockers =
     project.nb_ecarts_bloquants > 0 || project.nb_alertes_stock > 0;
@@ -469,22 +544,34 @@ function ProjectCard({ project }: { project: DashboardProjectSummary }) {
         <MiniKpi
           icon={<ShieldAlert size={13} />}
           label="Ecarts"
-          value={project.nb_ecarts_ouverts}
+          value={project.nb_ecarts_bloquants}
           critical={project.nb_ecarts_bloquants > 0}
           hint={
             project.nb_ecarts_bloquants > 0
-              ? `${project.nb_ecarts_bloquants} bloquants`
-              : "Verifications"
+              ? `${project.nb_ecarts_bloquants} bloquant${
+                  project.nb_ecarts_bloquants > 1 ? "s" : ""
+                }${onBlockerClick ? " - Voir le resume" : ""}`
+              : onBlockerClick
+              ? "Aucun bloquant"
+              : "Aucun bloquant"
           }
-          onClick={() => goTab("verifications")}
+          onClick={
+            onBlockerClick ? onBlockerClick : () => goTab("verifications")
+          }
         />
         <MiniKpi
           icon={<Boxes size={13} />}
           label="Alertes stock"
           value={project.nb_alertes_stock}
           critical={project.nb_alertes_stock > 0}
-          hint="Stock cables"
-          onClick={() => goTab("stock-cables")}
+          hint={
+            onStockAlertClick ? "Voir le resume" : "Stock cables"
+          }
+          onClick={
+            onStockAlertClick
+              ? onStockAlertClick
+              : () => goTab("stock-cables")
+          }
         />
         <MiniKpi
           icon={<Layers size={13} />}
@@ -612,6 +699,431 @@ function formatRelative(iso: string): string {
   if (sec < 3600) return `il y a ${Math.round(sec / 60)} min`;
   if (sec < 86400) return `il y a ${Math.round(sec / 3600)} h`;
   return d.toLocaleDateString("fr-FR");
+}
+
+// ---------------------------------------------------------------------------
+// Vue liste : un projet par ligne, clic = ouvre la synthese du projet seul
+// ---------------------------------------------------------------------------
+
+function ProjectsListView({
+  projects,
+  onSelect,
+}: {
+  projects: DashboardProjectSummary[];
+  onSelect: (id: string) => void;
+}) {
+  return (
+    <div className="bg-white border border-border-std rounded-lg overflow-hidden">
+      <div className="px-3 sm:px-4 py-2 border-b border-border-std bg-bg-cell/40">
+        <p className="text-[11px] text-text-tertiary">
+          Selectionnez un projet pour afficher sa synthese.
+        </p>
+      </div>
+      <ul className="divide-y divide-border-std">
+        {projects.map((p) => {
+          const hasBlockers =
+            p.nb_ecarts_bloquants > 0 || p.nb_alertes_stock > 0;
+          const isCritique = p.priorite === "critique";
+          return (
+            <li key={p.id}>
+              <button
+                type="button"
+                onClick={() => onSelect(p.id)}
+                className={cn(
+                  "w-full text-left px-3 sm:px-4 py-3 hover:bg-vinci-blue/5 transition-colors flex items-center gap-3",
+                  isCritique && "bg-vinci-red/[0.03]"
+                )}
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-[10px] uppercase tracking-wide text-text-tertiary">
+                      {p.code}
+                    </span>
+                    <span
+                      className={cn(
+                        "text-[10px] px-1.5 py-0.5 rounded uppercase tracking-wide",
+                        p.status === "actif"
+                          ? "bg-green-100 text-green-800"
+                          : "bg-bg-cell text-text-tertiary"
+                      )}
+                    >
+                      {p.status}
+                    </span>
+                    <span
+                      className={cn(
+                        "text-[10px] px-1.5 py-0.5 rounded font-medium",
+                        PHASE_BG[p.phase]
+                      )}
+                    >
+                      {PHASE_LABELS[p.phase]}
+                    </span>
+                    <span
+                      className={cn(
+                        "text-[10px] px-1.5 py-0.5 rounded font-medium",
+                        PRIORITE_BG[p.priorite]
+                      )}
+                    >
+                      {p.priorite}
+                    </span>
+                    {p.indice_caneco && (
+                      <span className="text-[10px] text-text-tertiary">
+                        Indice {p.indice_caneco}
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-1 flex items-baseline gap-2 flex-wrap">
+                    <h3 className="text-sm sm:text-base font-semibold text-vinci-blue truncate">
+                      {p.name}
+                    </h3>
+                    <span className="text-[11px] text-text-tertiary">
+                      {p.client ?? "—"}
+                      {p.agency ? ` · ${p.agency}` : ""}
+                    </span>
+                  </div>
+                  <div className="mt-1 flex items-center gap-3 flex-wrap text-[11px] text-text-secondary">
+                    <span>
+                      Avancement{" "}
+                      <span className="font-semibold text-text-primary">
+                        {p.avancement_pct.toFixed(0)} %
+                      </span>
+                    </span>
+                    <span
+                      className={cn(
+                        p.nb_ecarts_bloquants > 0 && "text-vinci-red font-medium"
+                      )}
+                    >
+                      {p.nb_ecarts_ouverts} ecarts
+                      {p.nb_ecarts_bloquants > 0
+                        ? ` (${p.nb_ecarts_bloquants} bloquants)`
+                        : ""}
+                    </span>
+                    <span
+                      className={cn(
+                        p.nb_alertes_stock > 0 && "text-vinci-red font-medium"
+                      )}
+                    >
+                      {p.nb_alertes_stock} alertes stock
+                    </span>
+                    <span>{p.nb_tableaux} tableaux</span>
+                  </div>
+                </div>
+                {hasBlockers && (
+                  <AlertTriangle
+                    size={14}
+                    className="text-vinci-red shrink-0"
+                  />
+                )}
+                <ChevronRight
+                  size={18}
+                  className="text-text-tertiary shrink-0"
+                />
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Panneau resume ecarts bloquants : depliable depuis la carte projet
+// ---------------------------------------------------------------------------
+
+function BlockingGapsPanel({
+  projectId,
+  projectCode,
+  onClose,
+}: {
+  projectId: string;
+  projectCode: string;
+  onClose: () => void;
+}) {
+  const navigate = useNavigate();
+
+  const { data: runs, isLoading: runsLoading, isError: runsError } = useQuery({
+    queryKey: ["dashboard-runs", projectId],
+    queryFn: () => listVerificationRuns(projectId),
+    staleTime: 30_000,
+  });
+
+  const latestRun = useMemo(() => {
+    if (!runs || runs.length === 0) return null;
+    return [...runs].sort(
+      (a, b) => Date.parse(b.created_at) - Date.parse(a.created_at)
+    )[0];
+  }, [runs]);
+
+  const {
+    data: gaps,
+    isLoading: gapsLoading,
+    isError: gapsError,
+  } = useQuery({
+    queryKey: ["dashboard-blocking-gaps", projectId, latestRun?.id],
+    queryFn: () =>
+      listGaps(projectId, latestRun!.id, { severity: "BLOQUANT" }),
+    enabled: !!latestRun?.id,
+    staleTime: 30_000,
+  });
+
+  const openGaps: Gap[] = useMemo(
+    () => (gaps ?? []).filter((g) => g.status !== "clos"),
+    [gaps]
+  );
+
+  const isLoading = runsLoading || (latestRun && gapsLoading);
+  const isError = runsError || gapsError;
+
+  return (
+    <div className="bg-white border border-vinci-red/40 rounded-lg overflow-hidden shadow-sm">
+      <div className="px-4 py-2.5 border-b border-border-std bg-vinci-red/5 flex items-center justify-between">
+        <div className="flex items-center gap-2 text-vinci-red">
+          <ShieldAlert size={14} />
+          <span className="text-sm font-semibold">
+            Resume ecarts bloquants : {projectCode}
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Fermer le resume ecarts bloquants"
+          className="text-text-tertiary hover:text-text-primary"
+        >
+          <X size={16} />
+        </button>
+      </div>
+      <div className="px-4 py-3">
+        {isLoading ? (
+          <p className="text-xs text-text-tertiary">
+            Chargement des ecarts bloquants...
+          </p>
+        ) : isError ? (
+          <p className="text-xs text-status-warn">
+            Impossible de charger les ecarts bloquants.
+          </p>
+        ) : !latestRun ? (
+          <p className="text-xs text-text-secondary">
+            Aucune verification lancee sur ce projet. Lancez une verification
+            depuis l'onglet Verifications.
+          </p>
+        ) : openGaps.length === 0 ? (
+          <p className="text-xs text-text-secondary">
+            Aucun ecart bloquant ouvert sur la derniere verification.
+          </p>
+        ) : (
+          <>
+            <div className="mb-3 rounded bg-vinci-red/5 border border-vinci-red/20 px-3 py-2 flex flex-wrap items-baseline gap-x-4 gap-y-1">
+              <div>
+                <span className="text-[10px] uppercase tracking-wide text-text-tertiary">
+                  Ecarts bloquants ouverts
+                </span>
+                <span className="ml-2 text-sm font-semibold text-vinci-red tabular-nums">
+                  {openGaps.length}
+                </span>
+              </div>
+              <div>
+                <span className="text-[10px] uppercase tracking-wide text-text-tertiary">
+                  Derniere verification
+                </span>
+                <span className="ml-2 text-xs text-text-secondary">
+                  {new Date(latestRun.created_at ?? "").toLocaleString("fr-FR")}
+                </span>
+              </div>
+            </div>
+            <ul className="space-y-2">
+              {openGaps.slice(0, 8).map((g) => (
+                <li
+                  key={g.id}
+                  className="text-xs text-text-secondary leading-relaxed"
+                >
+                  <div className="flex items-baseline gap-2 flex-wrap">
+                    <span className="text-[10px] uppercase tracking-wide text-vinci-red font-semibold">
+                      {g.code}
+                    </span>
+                    <span className="font-semibold text-vinci-blue">
+                      {g.title}
+                    </span>
+                    {g.caneco_repere && (
+                      <span className="text-[10px] text-text-tertiary">
+                        Repere {g.caneco_repere}
+                      </span>
+                    )}
+                  </div>
+                  {g.description && (
+                    <p className="mt-0.5 text-text-secondary">
+                      {g.description}
+                    </p>
+                  )}
+                  {g.suggested_action && (
+                    <p className="mt-0.5 text-[11px] italic text-text-tertiary">
+                      Action suggeree : {g.suggested_action}
+                    </p>
+                  )}
+                </li>
+              ))}
+            </ul>
+            {openGaps.length > 8 && (
+              <p className="mt-2 text-[11px] text-text-tertiary">
+                ... et {openGaps.length - 8} autres bloquants. Voir le detail.
+              </p>
+            )}
+          </>
+        )}
+      </div>
+      <div className="px-4 py-2 border-t border-border-std bg-bg-cell/40 flex justify-end">
+        <button
+          type="button"
+          onClick={() =>
+            navigate(`/projects/${projectId}?tab=verifications`)
+          }
+          className="inline-flex items-center gap-1 text-xs font-medium text-vinci-blue hover:underline"
+        >
+          Voir le detail
+          <ArrowUpRight size={12} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Panneau resume alertes stock : depliable depuis la carte projet
+// ---------------------------------------------------------------------------
+
+function StockAlertsPanel({
+  projectId,
+  projectCode,
+  onClose,
+}: {
+  projectId: string;
+  projectCode: string;
+  onClose: () => void;
+}) {
+  const navigate = useNavigate();
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ["dashboard-stock-alerts", projectId],
+    queryFn: () => getCableStock(projectId),
+    staleTime: 30_000,
+  });
+
+  const alerts: CableStockItemRow[] = useMemo(
+    () => (data?.items ?? []).filter((it) => it.en_alerte),
+    [data]
+  );
+
+  // Total a approvisionner = somme des mettres manquants pour repasser
+  // au-dessus du seuil d'alerte sur chaque reference concernee.
+  const totalAApprovisionner = useMemo(
+    () =>
+      alerts.reduce(
+        (acc, it) => acc + Math.max(it.seuil_alerte_min_m - it.stock_restant, 0),
+        0
+      ),
+    [alerts]
+  );
+
+  return (
+    <div className="bg-white border border-vinci-red/40 rounded-lg overflow-hidden shadow-sm">
+      <div className="px-4 py-2.5 border-b border-border-std bg-vinci-red/5 flex items-center justify-between">
+        <div className="flex items-center gap-2 text-vinci-red">
+          <Boxes size={14} />
+          <span className="text-sm font-semibold">
+            Resume alertes stock : {projectCode}
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Fermer le resume alertes stock"
+          className="text-text-tertiary hover:text-text-primary"
+        >
+          <X size={16} />
+        </button>
+      </div>
+      <div className="px-4 py-3">
+        {isLoading ? (
+          <p className="text-xs text-text-tertiary">
+            Chargement des alertes stock...
+          </p>
+        ) : isError ? (
+          <p className="text-xs text-status-warn">
+            Impossible de charger les alertes stock.
+          </p>
+        ) : alerts.length === 0 ? (
+          <p className="text-xs text-text-secondary">
+            Aucune reference en alerte sur ce projet.
+          </p>
+        ) : (
+          <>
+            <div className="mb-3 rounded bg-vinci-red/5 border border-vinci-red/20 px-3 py-2 flex flex-wrap items-baseline gap-x-4 gap-y-1">
+              <div>
+                <span className="text-[10px] uppercase tracking-wide text-text-tertiary">
+                  References en alerte
+                </span>
+                <span className="ml-2 text-sm font-semibold text-text-primary tabular-nums">
+                  {alerts.length}
+                </span>
+              </div>
+              <div>
+                <span className="text-[10px] uppercase tracking-wide text-text-tertiary">
+                  A approvisionner pour repasser au-dessus du seuil
+                </span>
+                <span className="ml-2 text-sm font-semibold text-vinci-red tabular-nums">
+                  {formatMeters(totalAApprovisionner)} m
+                </span>
+              </div>
+            </div>
+          <ul className="space-y-2">
+            {alerts.map((it, idx) => (
+              <li
+                key={(it.item_id ?? `${it.type_cable}-${it.section_label}-${it.ame}`) + idx}
+                className="text-xs text-text-secondary leading-relaxed"
+              >
+                <span className="font-semibold text-vinci-blue">
+                  {it.type_cable} {it.section_label}{" "}
+                  <span className="text-text-tertiary font-normal">
+                    ({it.ame})
+                  </span>
+                </span>
+                {" : "}
+                {it.stock_restant <= 0 ? (
+                  <span className="text-vinci-red font-medium">
+                    deficit de {formatMeters(Math.abs(it.stock_restant))} m,
+                    achat a prevoir
+                  </span>
+                ) : (
+                  <span>
+                    il reste{" "}
+                    <span className="font-semibold text-text-primary tabular-nums">
+                      {formatMeters(it.stock_restant)} m
+                    </span>{" "}
+                    sous le seuil d'alerte de{" "}
+                    {formatMeters(it.seuil_alerte_min_m)} m
+                  </span>
+                )}
+                <span className="block text-[10px] text-text-tertiary mt-0.5">
+                  Achete {formatMeters(it.quantite_achetee)} m · Livre{" "}
+                  {formatMeters(it.quantite_livree)} m · Utilise{" "}
+                  {formatMeters(it.quantite_utilisee)} m
+                </span>
+              </li>
+            ))}
+          </ul>
+          </>
+        )}
+      </div>
+      <div className="px-4 py-2 border-t border-border-std bg-bg-cell/40 flex justify-end">
+        <button
+          type="button"
+          onClick={() => navigate(`/projects/${projectId}?tab=stock-cables`)}
+          className="inline-flex items-center gap-1 text-xs font-medium text-vinci-blue hover:underline"
+        >
+          Voir le detail
+          <ArrowUpRight size={12} />
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function describeDeadline(
