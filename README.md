@@ -47,6 +47,7 @@ Installer dans cet ordre. Tous les liens pointent vers les pages officielles de 
 | Python | 3.11 | Backend FastAPI (utile hors Docker) | https://www.python.org/downloads/ |
 | GitHub CLI (optionnel) | dernière | Opérations GitHub depuis le terminal | https://cli.github.com/ |
 | Claude Code (optionnel, recommandé) | dernière | Assistant de développement IA utilisé pour construire ce projet | https://claude.com/claude-code |
+| ngrok (optionnel) | dernière | Lien public permanent pour les QR codes et les démonstrations (voir section 3.6) | https://ngrok.com/download |
 
 Notes d'installation :
 
@@ -109,6 +110,67 @@ Au premier démarrage, le backend applique automatiquement les migrations de bas
 ### 3.5 Charger les données du cas pilote
 
 Se connecter avec le compte BE, ouvrir le projet DACHSER-L3, onglet Études, puis uploader le fichier `data/seed/dachser/DATA_DACHSER_INDICE_B.XLS`. Les autres pièces du projet (bordereau, CPS) se chargent depuis leurs onglets respectifs.
+
+### 3.6 Lien public permanent avec ngrok (QR codes et démonstrations)
+
+En local, l'application n'est visible que sur le poste de développement. Un tunnel ngrok expose le frontend sur une URL publique stable, indispensable pour deux usages :
+
+- les QR codes collés sur les armoires doivent s'ouvrir depuis n'importe quel téléphone (la variable `PUBLIC_BASE_URL` de `docker-compose.yml` est encodée dans chaque QR généré) ;
+- les démonstrations à distance (encadrant, jury, agence) sans rien installer chez l'interlocuteur.
+
+C'est le montage actuellement en service sur le projet, avec une URL qui ne change jamais.
+
+**Préparation du compte (commune aux deux méthodes)**
+
+1. Créer un compte ngrok gratuit : https://dashboard.ngrok.com/signup
+2. Récupérer l'authtoken : https://dashboard.ngrok.com/get-started/your-authtoken
+3. Réserver le domaine statique gratuit du compte : https://dashboard.ngrok.com/domains (bouton New Domain). Le plan gratuit inclut un domaine fixe du type `xxxx-yyyy-zzzz.ngrok-free.dev` : c'est lui qui rend le lien permanent.
+
+L'authtoken est un secret : ne jamais l'écrire dans un fichier du dépôt ni le committer.
+
+**Méthode 1 : mise en place manuelle**
+
+```bash
+# 1. Installer ngrok (téléchargement : https://ngrok.com/download), puis enregistrer le token
+ngrok config add-authtoken <VOTRE_AUTHTOKEN>
+
+# 2. Ouvrir le tunnel vers le frontend avec le domaine réservé
+ngrok http 5173 --domain=<votre-domaine>.ngrok-free.dev
+```
+
+3. Mettre à jour `PUBLIC_BASE_URL` dans `docker-compose.yml` avec `https://<votre-domaine>.ngrok-free.dev`, puis recréer le backend : `docker compose up -d backend`.
+4. Régénérer les tableaux (onglet Tableaux, bouton de génération) pour que les QR codes encodent la nouvelle URL. La régénération conserve les tokens existants : les étiquettes déjà imprimées restent valides.
+5. Pour que le tunnel démarre tout seul à chaque ouverture de session Windows : touche Windows + R, taper `shell:startup`, puis déposer dans ce dossier un script `.cmd` contenant la commande du point 2 (idéalement dans une boucle de relance en cas de coupure) :
+
+```
+:boucle
+ngrok http 5173 --domain=<votre-domaine>.ngrok-free.dev
+timeout /t 20
+goto boucle
+```
+
+Cas particulier réseau d'entreprise : si le téléchargement du binaire ngrok est bloqué (situation rencontrée à l'agence, où seul le port 443 sort), passer par le SDK Node : `npm install @ngrok/ngrok`, puis un petit script `launch.js` qui ouvre le tunnel vers le port 5173 et lit le token depuis la variable d'environnement `NGROK_AUTHTOKEN`. C'est le montage actuellement en place, avec relance automatique et lancement invisible au démarrage de session.
+
+**Méthode 2 : mise en place par Claude Code**
+
+Ouvrir Claude Code dans le dossier du projet et lui demander, par exemple :
+
+```
+Mets en place un tunnel ngrok permanent vers le port 5173.
+Mon domaine statique reserve : <votre-domaine>.ngrok-free.dev
+Mon authtoken est dans la variable d'environnement NGROK_AUTHTOKEN (ne l'ecris jamais en dur ni dans le depot).
+Je veux : demarrage automatique a l'ouverture de session Windows, relance automatique en cas de coupure,
+mise a jour de PUBLIC_BASE_URL dans docker-compose.yml, et la procedure pour regenerer les QR codes.
+Si le telechargement du binaire ngrok est bloque par le reseau, utilise le SDK Node @ngrok/ngrok.
+```
+
+Claude Code crée les scripts, configure le démarrage automatique, met à jour la configuration et vérifie que le lien répond. Définir d'abord le token en variable d'environnement utilisateur : `setx NGROK_AUTHTOKEN "<VOTRE_AUTHTOKEN>"` (puis rouvrir le terminal).
+
+**Limites du plan gratuit à connaître**
+
+- Une seule session de tunnel à la fois : si une erreur ERR_NGROK_108 ou ERR_NGROK_334 (« endpoint already online ») apparaît, fermer toutes les instances ngrok/node en double, attendre environ 40 secondes, puis relancer une seule instance.
+- Au premier accès depuis un navigateur, ngrok affiche une page intermédiaire « Visit Site » : prévenir l'interlocuteur, il suffit de cliquer une fois.
+- Pour une démonstration fluide à distance, servir le build de production du frontend : `docker compose -f docker-compose.yml -f docker-compose.preview.yml up -d frontend` (détail dans la documentation technique, section 7.2).
 
 ---
 
@@ -252,4 +314,5 @@ caneco-bt-tool/
 | Erreur 401 sur toutes les requêtes | Session expirée | Se reconnecter (le token JWT expire après 60 minutes) |
 | Le hot reload ne fonctionne plus | Watcher Vite bloqué | `docker compose restart frontend` |
 | La base semble corrompue ou incohérente | Migrations partielles | `docker compose down -v` puis `docker compose up -d` (repart de zéro) |
-| Les QR codes scannés ne s'ouvrent pas depuis un téléphone | `PUBLIC_BASE_URL` pointe vers une URL non accessible | Configurer un tunnel (ngrok) ou une URL publique dans `docker-compose.yml`, puis régénérer les tableaux |
+| Les QR codes scannés ne s'ouvrent pas depuis un téléphone | `PUBLIC_BASE_URL` pointe vers une URL non accessible | Mettre en place le tunnel ngrok (section 3.6), mettre à jour `docker-compose.yml`, puis régénérer les tableaux |
+| Erreur ngrok ERR_NGROK_108 ou 334 | Plusieurs tunnels lancés en même temps (limite du plan gratuit) | Fermer toutes les instances ngrok/node, attendre 40 s, relancer une seule instance |

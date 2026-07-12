@@ -4,7 +4,7 @@
 **Dépôt** : https://github.com/alysquart/caneco-bt-tool (branche stable : `main`)
 **Version documentée** : V1 (état au 12/07/2026)
 **Cadre** : Challenge Innovation VEAO 2026 — Actemium Cegelec Tanger, VINCI Energies
-**Auteur initial** : Aly Aly SANOH
+**Équipe projet** : Aly Aly SANOH (Stagiaire Ingénieur), Mouhcine ZEKRAOUI (Responsable Études Électrique), M. Chakib ABBADI (Chef d'Entreprise)
 
 Ce document décrit l'architecture, les services, le modèle de données, l'API et les procédures d'exploitation de l'outil, dans son état à la fin du stage PFE. Il complète le `README.md` (guide d'installation) et le `PRD.md` (vision produit et roadmap).
 
