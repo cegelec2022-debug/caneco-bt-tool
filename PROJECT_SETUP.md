@@ -1,4 +1,6 @@
-# PROJECT_SETUP.md — Guide étape par étape
+# PROJECT_SETUP.md — Guide étape par étape (archive)
+
+> **Note (juillet 2026)** : ce guide décrit le démarrage du projet de zéro, avant la V1. Il est conservé comme archive. Pour prendre en main le projet dans son état actuel, suivre le `README.md` (guide d'installation) puis `docs/DOCUMENTATION_TECHNIQUE.md`.
 
 > Lis-moi en premier. Ce guide te dit exactement quoi faire, dans quel ordre, pour passer de zéro à la V1 fonctionnelle.
 

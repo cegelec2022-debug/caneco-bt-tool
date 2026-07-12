@@ -4,9 +4,9 @@
 **Cas pilote** : projet DACHSER — Lot 3 (Électricité)
 **Agence** : Actemium Cegelec — VINCI Energies
 **Cadre** : Challenge Innovation VEAO 2026
-**Statut** : V1 — version pour soutenance, base d'évolution
-**Date** : Mai 2026
-**Version** : 1.0
+**Statut** : V1 livrée (soutenance VEAO et soutenance PFE du 02/07/2026 passées) — base d'évolution vers le déploiement agence
+**Date** : Mai 2026 (création) — mise à jour Juillet 2026
+**Version** : 1.1
 
 ---
 
@@ -391,36 +391,46 @@ Utiliser **shadcn/ui** comme base de composants. C'est une bibliothèque de comp
 
 ---
 
-## 9. Roadmap
+## 9. Roadmap et état d'avancement
 
-### 9.1   V1 — Soutenance VEAO (à 15h aujourd'hui)
+### 9.1   V1 — livrée (état au 12/07/2026)
 
-Périmètre minimal viable, démontrable face au jury.
+Périmètre réalisé, validé en démonstration live devant les jurys VEAO et PFE, sur les cas pilotes DACHSER-L3 et NSK-L3.
 
 - [x] Cartes d'empathie, problématisation, proposition de valeur
 - [x] Cahier des charges fonctionnel et technique
-- [x] Brief de pitch et prompts d'images
-- [ ] Back-end FastAPI : routes auth, projects, caneco-imports, bordereau-imports, verification-runs, gaps
-- [ ] Front-end React : login, liste projets, page projet, upload CANECO, lancement vérification, affichage rapport d'écarts
-- [ ] Page fiche tableau accessible par QR
-- [ ] Génération de planches A4 de QR codes (impression)
-- [ ] Saisie mobile simple (web responsive) des longueurs réelles
-- [ ] Tableau de bord multi-projets simple
-- [ ] Génération DOE PDF
-- [ ] Données seed : projet DACHSER avec sa note CANECO indice B et son bordereau
+- [x] Back-end FastAPI complet : auth JWT + 4 rôles (admin, BE, Chef de Chantier, RA), projects, imports CANECO / bordereau / CPS, vérifications, écarts, tableaux, saisies chantier, stock câbles, dashboard, métriques projet, route publique QR
+- [x] Moteur de vérification déterministe : référentiel d'écarts **étendu de 10 à 20 codes (E-001 à E-020)** couvrant CANECO/bordereau, CANECO/CPS, CANECO/norme NF C 15-100 (règles en JSON), cohérence des protections (IB > In, IrTh, Icu) et complétude des données. Validation DACHSER indice B : 2 415 écarts détectés dont 2 bloquants E-004 confirmés manuellement
+- [x] Front-end React : login, liste projets, page projet à onglets (Vue, Études, Bordereau, CPS, Vérifs, Carnet, Tableaux, Saisie, Stock, DOE, Paramètres), rapport d'écarts filtrable, mode présentation
+- [x] Module A — Tableaux + QR : dérivation des tableaux depuis l'export CANECO, fiche publique par token, planches A4 de 8 étiquettes, fiche PDF
+- [x] Carnet de câbles méthode CANECO : décomposition en conducteurs unipolaires, sommaire comparable au PDF officiel (DACHSER indice C : 41 616 m calculés vs 41 746 m CANECO, écart -0,31 %)
+- [x] Module B — Saisie chantier : 1 saisie par ligne CANECO, longueur réelle + commentaire, commentaire obligatoire si longueur nulle ou écart > 50 %, indicateur d'écart coloré
+- [x] Module B+ — Stock câbles : toutes les références du carnet, quantités achetée / livrée / utilisée (calculée depuis les saisies), seuils d'alerte configurables, filtres Type / Section / Âme / État
+- [x] Module C — Tableau de bord multi-projets RA : KPI globaux, liste projets triable et filtrable, drill-down projet (alertes stock, écarts bloquants)
+- [x] Permissions par rôle (le Chef de Chantier n'accède pas au dossier d'études), responsive mobile, accent charte VINCI
+- [x] Données seed : 4 comptes de démonstration + projet DACHSER-L3
+- [x] 238+ tests pytest verts, tests Vitest côté front
 
-### 9.2   V2 — 6 semaines après la soutenance
+**Reste de la V1 initiale, reporté :**
 
+- [ ] Génération DOE PDF + Excel (le service `services/doe` est créé mais vide ; les fiches tableau PDF unitaires existent déjà)
+- [ ] Saisie photo en justification d'un écart (US-CC-03)
+- [ ] Mode hors-ligne PWA avec synchronisation différée (US-CC-04 / US-CC-05)
+
+### 9.2   V2 — prochaine étape (sous pilotage agence)
+
+- Génération DOE complète (PDF + Excel, versionnée) — priorité 1, ferme la Brique 3
 - Mode hors-ligne complet pour la PWA mobile (synchronisation différée)
-- Couche IA optionnelle pour bordereaux PDF non structurés
+- Photos en justification des écarts chantier
+- Couche IA (API Claude) activée en production pour les bordereaux PDF non structurés (l'adapter `services/llm` existe, non branché en production)
 - Module complet de transfert de matériel inter-projets
 - Alertes par e-mail
-- Comparaison de deux indices CANECO
+- Comparaison de deux indices CANECO (A vs B)
 
 ### 9.3   V3 — 3 mois après
 
-- Pilote sur 2 projets réels d'Actemium Cegelec
-- Module de configuration des règles NF C 15-100 par l'admin
+- Pilote sur 2 projets réels d'Actemium Cegelec (DACHSER déjà en cours, fin prévue 15/09/2026)
+- Module de configuration des règles NF C 15-100 par l'admin (les règles sont déjà externalisées en JSON)
 - Mode multi-utilisateurs simultanés sur un même projet (verrous optimistes)
 - Statistiques agence (cumul sur tous les projets)
 
@@ -461,6 +471,8 @@ Périmètre minimal viable, démontrable face au jury.
 ---
 
 ## 12. Annexe — Tableau de mapping des écarts
+
+Référentiel initial V1 (E-001 à E-010). L'implémentation l'a étendu à 20 codes (E-011 à E-020 : pouvoir de coupure Icu, réglages IrTh, sous-tableaux non appariés, règles CPS à vérifier, champs manquants, etc.) ; la liste exhaustive avec libellés exacts est dans `backend/app/services/verification/` et dans la documentation technique.
 
 | Code | Libellé | Criticité | Source comparée |
 |---|---|---|---|
