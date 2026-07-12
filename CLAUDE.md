@@ -328,4 +328,315 @@ Il ne tranche jamais seul.
 
 ---
 
+## Rapport PFE LaTeX — consignes maîtresses
+
+> Cette section pilote la rédaction du rapport de Projet de Fin d'Études.
+> Elle est lue à chaque session de rédaction et reste à jour entre les chapitres.
+
+### Identité du rapport (CONFIRMÉ 18/06/2026)
+
+- **Titre officiel école (à conserver tel quel)** : *Étude et dimensionnement réseau thermique, électrique d'une unité industrielle et logistique*
+- **Auteur** : Aly Aly SANOH
+- **Filière** : Génie Électrique et Management Industriel (GEMI), 3ᵉ année cycle ingénieur
+- **Établissement** : Université Abdelmalek Essaâdi — Faculté des Sciences et Techniques de Tanger (FSTT) — Département de Génie Électrique
+- **Entreprise d'accueil** : Actemium / Cegelec Tanger — VINCI Energies Maroc
+- **Encadrante entreprise** : Mme Mariam JIBRANE
+- **Encadrants académiques FST** : Pr. M. BOULAALA / Pr. Z. MEKRINI (deux encadrants académiques)
+- **Jury de soutenance** :
+  - Pr. **Mohamed Yamni** — Président
+  - Pr. **Mohamed El Harzli** — Rapporteur
+  - Pr. **M'hamed El Mrabet** — Rapporteur
+  - Pr. Boulaala / Pr. Mekrini — Encadrants FST
+  - Mme Mariam Jibrane — Encadrante Entreprise
+- **Soutenance** : **02 juillet 2026, 12 h, salle C03**
+- **Dépôt rapport** : 26 juin 2026 (papier + PDF + CD + version après soutenance)
+- **Volume rapport** : 60 pages max, grand max 65 hors annexes (consigne FST)
+- **Statut au 18/06/2026** : version finale prête à envoyer aux encadrants académiques (89 pages totales, 67 corps)
+
+### Consignes école (verbatim — avis Pr. BSISS)
+
+- 60 pages maximum hors annexes
+- Police Times New Roman 12 pt (équivalent LaTeX accepté : Linux Libertine)
+- Interligne 1,5
+- Marges standards (left 3 cm, right/top/bottom 2,5 cm)
+- Numérotation pages, mise en forme soignée
+- Page de garde selon modèle GEMI fourni
+- Sommaire, introduction, conclusion, références bibliographiques obligatoires
+- Listes : figures, tableaux, abréviations obligatoires
+- **5 exemplaires** papier reliure spirale + CD + rapport après soutenance (5 car deux encadrants académiques)
+
+### Localisation des ressources
+
+Tout est sous `C:\Users\hp\Desktop\Ressources_PFE_VINCI\` (créé en juin 2026) :
+
+```
+00_Consignes_Ecole/             Page de garde GEMI (modèle officiel)
+01_Rapports_Inspiratifs/
+  ├── Capgemini/                Rapport PFA ADAS (auteur) — base structure et LaTeX
+  ├── CFA_CFO_BIM/              28 rapports anciens étudiants même domaine
+  └── Machine_Learning/         Rapport inspiratif ML
+02_Rapports_Anciens_Etudiants/  Rapport_Stage V2 (étudiant photovoltaïque)
+03_Mes_Rapports_Avancement/     3 rapports d'avancement PDF + 2 DOCX (réf. travaux Phase 1 à 5)
+04_VINCI_Identite_Marque/       Logos, charte, infos web VINCI Energies (à enrichir)
+05_Projet_DACHSER/              Gantt, PPT, CCTP, plans, Revit, BP, fiches CFO/CFA
+06_Outil_Bilan_Puissance_VBA/   BP 0 macro.xlsm + modules .bas (outil VBA développé)
+07_Outil_CANECO_Valorisation/   Vidéo démo + Innovation VEAO 2026 (carte empathie, PPT pitch)
+08_Photos_Chantier/             Photos WhatsApp chantier DACHSER
+09_Template_Latex_HPI/          Template thesis.tex de référence (Libertine + newtxmath)
+99_Rapport_PFE_Latex/           DOSSIER DE TRAVAIL — main.tex + chapitres + figures + bib
+```
+
+### Décisions techniques figées
+
+| Aspect | Décision |
+|---|---|
+| Moteur | MikTeX 25.12 (`pdflatex` local) |
+| Classe document | `report`, 12pt, A4, oneside (le rapport est imprimé une face) |
+| Police texte | `\usepackage{libertine}` (Linux Libertine — Times-like, x-height généreux) |
+| Police maths | `\usepackage[libertine]{newtxmath}` |
+| Interligne | `\onehalfspacing` (1,5) |
+| Géométrie | `left=3cm, right=2.5cm, top=2.5cm, bottom=2.5cm` |
+| Encodage | UTF-8 (`inputenc`) + T1 (`fontenc`) + `babel` français |
+| Langue | Français pour le corps, abstract anglais en plus du résumé |
+| Couleur primaire | `vinciRed` RGB(227,30,36) — bandeau page de garde, titres chapitres |
+| Couleur secondaire | `vinciNavy` RGB(0,47,86) — sections, sous-titres |
+| Couleur accent | `actemiumGreen` RGB(0,153,60) — encadrés métier, tableaux |
+| Reste | Niveaux de gris uniquement. Pas de couleur décorative. |
+| Hyperliens | `hyperref` actif pour table des matières, listes, citations — cliquables dans le PDF |
+| Pages landscape | UNIQUEMENT pour le WBS (forest) et le diagramme de Gantt (pgfgantt) via `pdflscape` |
+| Cadre page de garde | TikZ : double cadre `vinciRed` (extérieur) + `vinciNavy` (intérieur), inspiré Capgemini |
+
+### Plan validé (6 chapitres — chap7 supprimé, tests intégrés au chap6)
+
+- **Pages préliminaires** : page de garde, dédicaces, remerciements, résumé/abstract, TOC, listes figures/tableaux/abréviations
+- **Introduction générale**
+- **Chapitre 1** — Présentation générale et contexte du projet (VINCI Energies / Actemium / Cegelec, 6 marques avec sous-sections individuelles préservées, projet DACHSER, plan réseau extérieur, problématique, objectifs, méthodologie, WBS landscape + Gantt landscape, risques)
+- **Chapitre 2** — État de l'art : conception électrique BT et outils métiers (NFC 15-100, bilan de puissance, CANECO BT, BIM électrique, sprinklage NFPA 13)
+- **Chapitre 3** — Dimensionnement BT DACHSER (positionnement bilan dans processus CFO VINCI, synoptique MT/BT, table REP officielle 24 lignes, formules par circuit en français sans `=SUMIF`, agrégation TGBT 663,34 kVA / 800 kVA / 17,08% réserve, plans chemins de câbles + 4 fiches étapes pose 2 par 2)
+- **Chapitre 4** — Modélisation BIM réseau sprinklage Revit (cadre normatif, paramétrage, état d'avancement : setup + tracés préliminaires, **PAS de maquette LOD350 livrée**, contraintes matérielles documentées, vues 3D Dialux illustratives avec caption HONNÊTE)
+- **Chapitre 5** — Outil VBA bilan de puissance (architecture en 3 zones, logique calcul, formules trigonométriques, cas canalisations préfabriquées, choix calibre transfo avec règle 15% marge, catalogue 431 équip., validation contre bilan officiel)
+- **Chapitre 6** — Outil CANECO BT (Challenge VEAO 2026, V1 18/06/2026, 3 briques, architecture simplifiée sans jargon, 14 captures écrans réels DACHSER+NSK, validation E-004, métriques PRD)
+- **Conclusion générale et perspectives**
+- **Bibliographie / Webographie**
+- **Annexes** : A) arborescence projet outils (PAS de code, juste structure dossiers), B) captures supplémentaires, C) liens démo, D) glossaire technique
+
+### Style éditorial — règles absolues
+
+1. **Ton humain, professionnel, sobre**. Pas de tournures « IA » (« Il est important de noter que », « Comme nous l'avons vu précédemment », etc.). Pas de phrases auto-référentielles vers le rapport (« ce rapport montre que », préférer la voix passive métier).
+2. **Pas de superlatifs auto-élogieux**. Bannis : *expertise*, *largement supérieur au marché*, *innovation disruptive*, *excellence technique*. Préférer : *les résultats obtenus*, *cohérent avec*, *adapté au besoin métier*.
+3. **Pas d'instructions de méta-rédaction** dans le texte (« nous allons voir », « passons maintenant à »). Le lecteur sait lire — la table des matières fait le travail.
+4. **Formules mathématiques** systématiquement accompagnées de la signification des symboles, dans un environnement `equation` numéroté. Exemple : après chaque formule, lister `où : P = puissance installée (kW), Ku = coefficient d'utilisation, Ks = coefficient de simultanéité`.
+5. **Toutes formules NFC 15-100, méthode CANECO, hydraulique NFPA 13, ML (si évoqué)** sont citées avec la source (norme, document de référence). Pas de formule « tombée du ciel ».
+6. **Illustrations** : chaque figure/tableau a une légende ET est référencée dans le texte (`comme illustré sur la Figure~\ref{...}`). Pas de figure orpheline.
+7. **Hyperliens cliquables** : TOC, liste figures, liste tableaux, citations bibliographiques, URLs — tout doit être cliquable dans le PDF (via `hyperref`).
+8. **Pas d'emoji**. Jamais. Même pas dans les notes ou TODO LaTeX.
+9. **Pas de couleurs hors charte VINCI**. Niveaux de gris pour le reste. Justifier toute couleur ajoutée.
+
+### Convention images
+
+- Toutes les images vont dans `99_Rapport_PFE_Latex/figures/`
+- Nom de fichier en **kebab-case** : `logo-vinci-energies.png`, `wbs-pfe-dachser.pdf`, `dashboard-canecotool-vue-ra.png`
+- Format : **PNG** pour captures et photos, **PDF** ou **SVG** pour schémas vectoriels (TikZ exporté), **JPG** uniquement si déjà en JPG (photos chantier WhatsApp)
+- Résolution minimale : **300 dpi** pour impression
+- Lorsqu'une image est à fournir par l'auteur, je laisse un commentaire LaTeX `% TODO IMAGE: <nom-exact-attendu>.png — <description précise de ce qu'il faut capturer/télécharger>` et je liste dans le récap fin de chapitre tout ce qui manque
+
+### Workflow chapitre par chapitre
+
+1. Avant chaque chapitre, je relis les ressources concernées (un rapport inspiratif sur ce thème + section pertinente du Capgemini + ressource métier).
+2. Je propose **le plan détaillé** du chapitre (sections, sous-sections, figures prévues) avant rédaction.
+3. L'utilisateur valide ou ajuste.
+4. Je rédige le `.tex` du chapitre, je compile via `pdflatex` en local, je rends compte des warnings.
+5. L'utilisateur relit le PDF, je corrige.
+6. Passage au chapitre suivant.
+
+### Prompt ultim rapport — VINCI/Actemium PFE (adapté du prompt Capgemini PFA de l'auteur)
+
+> Ce prompt est la **consigne maîtresse** réutilisée à chaque session de rédaction. Il transpose le prompt Capgemini PFA que l'auteur a utilisé pour son rapport ADAS (`Drive edu uiz/Cap PFA-/Cap PFA/Capgemini Eng/Prompts.txt`), adapté au sujet VINCI/Actemium et à la nature dual-outil (BP VBA + Outil CANECO) de ce PFE.
+
+**Inspirations sources** (à relire avant chaque chapitre concerné) :
+
+- `01_Rapports_Inspiratifs/Capgemini/Rapport/Rapport inspiratif capgemini Engineering.docx` — modèle de **structure du plan**, de **ton professionnel**, et présentation organisme d'accueil. Les chiffres et descriptions Capgemini sont remplacés par les chiffres VINCI Energies et Actemium/Cegelec.
+- `01_Rapports_Inspiratifs/Machine_Learning/Rapport inspiratif ML.pdf` — modèle pour **expliquer un concept technique** avant son application (utile pour chapitres 2, 5, 6 : tout concept est d'abord posé — NFC 15-100, bilan de puissance, CANECO BT, architecture API REST, sécurité JWT — AVANT d'être appliqué au cas DACHSER).
+- `01_Rapports_Inspiratifs/CFA_CFO_BIM/` — 28 rapports anciens étudiants même domaine : ressources pour vocabulaire métier, présentations CCTP, schémas unifilaires, tableaux de bilan de puissance type.
+
+**Règles de ton — sans exception** :
+
+1. **Ton humain, pro, sobre et naturel.** Pas de tournures « IA » (« il est important de noter », « comme nous l'avons vu », « ce chapitre nous montrera »). Le lecteur sait lire — la table des matières fait le travail.
+2. **Pas d'auto-positionnement « expert ».** Bannis : *expertise*, *largement supérieur au marché*, *innovation disruptive*, *excellence technique*, *bien au-delà des standards*. Préférer factuel : *les résultats obtenus*, *cohérent avec*, *conforme au CCTP*, *écart de 0 kW vis-à-vis du bilan officiel*.
+3. **Pas de méta-commentaire** sur le rapport lui-même (« dans ce qui suit nous verrons »). Le texte parle directement au lecteur.
+4. **Voix passive métier ou je sobre.** Pas de « nous » académique creux.
+
+**Formules mathématiques et physiques** :
+
+- Toute formule est posée dans un environnement `equation` numéroté.
+- Juste après l'équation, lister les symboles : `où : Pi = puissance installée (kW), Ku = coefficient d'utilisation, Ks = coefficient de simultanéité (NF C 15-100 §4.2)`.
+- Source citée (norme NF C 15-100 / 13-200, guide UTE, méthode CANECO, NFPA 13 pour sprinklage, etc.).
+- Pour le bilan de puissance, formules implémentées dans `06_Outil_Bilan_Puissance_VBA/BP 0 macro.xlsm` (rapport avancement n°3 §2.3) :
+  - Par circuit : `Ptot = Nrec × Napp × Pu × Ku × Ks`
+  - Par tableau : `Pfois = Kf × Σ Ptot`, `Pinstall = (1+r) × Pfois` avec r = 20 %
+  - Conversion kVA : `S = P / cosφ_moyen pondéré`
+
+**Convention images — exécution stricte** :
+
+- Toutes images dans `99_Rapport_PFE_Latex/figures/`, nom en **kebab-case**.
+- Format : PNG (captures, photos), PDF/SVG (schémas vectoriels TikZ), JPG (uniquement WhatsApp originales).
+- Résolution mini 300 dpi.
+- Quand l'auteur doit fournir une image : commentaire LaTeX explicite et récap fin de chapitre :
+  ```latex
+  % TODO IMAGE: dashboard-canecotool-ra-overview.png
+  % Capture demandée : se connecter en tant que RA, ouvrir le dashboard global,
+  % zoomer sur la barre de KPI + carte projet DACHSER, plein écran navigateur,
+  % résolution 1920x1080. Format PNG.
+  \begin{figure}[H]
+      \centering
+      \includegraphics[width=0.95\textwidth]{figures/dashboard-canecotool-ra-overview.png}
+      \caption{Dashboard global du Responsable d'Affaires — outil de valorisation CANECO BT}
+      \label{fig:dashboard-canecotool-ra-overview}
+  \end{figure}
+  ```
+- Pour les **captures vidéo démo CANECO** (`07_Outil_CANECO_Valorisation/Video demo*.mp4`) : je nommerai chaque capture précisément (ex. `canecotool-login.png`, `canecotool-tableaux-liste.png`, `canecotool-fiche-publique-qr.png`, `canecotool-saisie-chantier.png`, `canecotool-stock-alerte.png`, `canecotool-dashboard-ra.png`), l'auteur prend la capture à l'instant indiqué de la vidéo, l'enregistre sous ce nom dans `figures/`, l'image apparaît automatiquement à la compilation.
+- Pour les **logos / illustrations standard** (logo VINCI Energies, Actemium, Cegelec, Excel, VBA, Python, FastAPI, React, PostgreSQL, Revit, AutoCAD, normes NF…) : je donne la requête Google précise (ex. `"VINCI Energies logo SVG transparent fond blanc"`) + le nom de fichier exact à utiliser dans `figures/`. Privilégier Wikimedia Commons ou sites officiels (haute résolution, libre de droits).
+- Pour les **schémas conceptuels** (architecture outil, flux de données, schéma unifilaire générique, organigramme Actemium, WBS, Gantt) : je les fais en **TikZ pro** directement dans le `.tex` — pas besoin de fichier image externe.
+
+**Code source** :
+
+- **Pas de code dans les chapitres principaux**. Ce serait écrasant.
+- En annexe : **arborescence des projets** (BP VBA + Outil CANECO) sous forme d'arbre `forest` ou `dirtree`, **liens GitHub privés** ou **lien Drive** vers le repo, **liens démo** (tunnel ngrok pour CANECO).
+- Si un extrait court est indispensable (formule VBA clé, route FastAPI emblématique) : 5-10 lignes max, environnement `lstlisting` minimaliste, en gris discret, jamais coloré.
+
+**Diagrammes** :
+
+- Pas tous les diagrammes UML/SysML — seulement les **nécessaires** :
+  - Chapitre 1 : WBS (forest, landscape), Gantt (pgfgantt, landscape) — code à intégrer depuis `05_Projet_DACHSER/5e_Planning_Gantt/`
+  - Chapitre 3 : schéma unifilaire simplifié TGBT DACHSER (TikZ)
+  - Chapitre 5 : architecture outil BP VBA (TikZ blocs : Saisie → Catalogue → Tableaux → Circuits → Génération → Bilan → Export PDF)
+  - Chapitre 6 : architecture C4 niveau 2 outil CANECO (TikZ : React frontend / FastAPI backend / PostgreSQL / tunnel ngrok), diagramme de séquence scan QR fiche publique
+- Toute page WBS ou Gantt **doit être en landscape** via `pdflscape` — non négociable, sinon illisible.
+
+**Couleurs — usage strict** :
+
+- `vinciRed` `RGB(227,30,36)` — uniquement bandeau page de garde, double trait décoratif chapitres, cadre encart définition
+- `vinciNavy` `RGB(0,47,86)` — titres chapitres, sections
+- `actemiumGreen` `RGB(0,153,60)` — encadrés métier rares (max 2-3 dans tout le rapport)
+- Le reste : gris (`gray!60`, `gray!30`) ou noir. Aucune autre couleur introduite sans justification.
+
+**Listes obligatoires (hyperlinks cliquables via `hyperref`)** :
+
+- Table des matières
+- Liste des figures
+- Liste des tableaux
+- Liste des abréviations (table 2 colonnes : acronyme | signification, ordre alphabétique)
+- Bibliographie (BibTeX, `biber`)
+- Tous les renvois `\ref{...}` et `\cite{...}` sont cliquables dans le PDF final.
+
+**Packages LaTeX à charger dès le chapitre 1** (pour ne plus y revenir) :
+
+```latex
+% Encodage et langue
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+
+% Police Libertine + maths newtx
+\usepackage{libertine}
+\usepackage[libertine]{newtxmath}
+\usepackage{microtype}
+
+% Géométrie + interligne
+\usepackage{geometry}
+\geometry{left=3cm, right=2.5cm, top=2.5cm, bottom=2.5cm}
+\usepackage{setspace}
+\onehalfspacing
+
+% Maths
+\usepackage{amsmath, amssymb, amsfonts, mathtools}
+\usepackage{siunitx}  % unités SI (kW, kVA, kHz, etc.)
+
+% Tableaux et figures
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{tabularx, booktabs, multirow, multicol, longtable}
+\usepackage{caption, subcaption}
+\usepackage{wrapfig}
+
+% TikZ et diagrammes
+\usepackage{tikz}
+\usepackage{pgfgantt}
+\usepackage{forest}
+\usetikzlibrary{shapes.geometric, arrows, positioning, decorations.pathmorphing, shadows, calc, fit, backgrounds}
+
+% Landscape WBS + Gantt
+\usepackage{pdflscape}
+
+% Mise en forme
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\definecolor{vinciRed}{RGB}{227,30,36}
+\definecolor{vinciNavy}{RGB}{0,47,86}
+\definecolor{actemiumGreen}{RGB}{0,153,60}
+\definecolor{proGray}{RGB}{64,64,64}
+
+% Code (rare, en annexe)
+\usepackage{listings}
+
+% Hyperliens (toujours en dernier ou presque)
+\usepackage{hyperref}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=vinciNavy,
+    citecolor=vinciNavy,
+    urlcolor=vinciRed,
+    pdftitle={Étude et dimensionnement réseau BT DACHSER \& valorisation des données CANECO BT},
+    pdfauthor={Aly Aly SANOH},
+    pdfsubject={Rapport PFE — VINCI Energies / Actemium Cegelec Tanger},
+    pdfkeywords={CANECO BT, Bilan de puissance, NFC 15-100, DACHSER, FastAPI, React, VBA, BIM, sprinklage, VINCI Energies}
+}
+```
+
+**Lien Drive vidéo démo** : l'auteur fournira un lien Drive vers la vidéo démo de l'outil CANECO BT, à insérer dans la conclusion + annexes.
+
+**Workflow chapitre par chapitre — non négociable** :
+
+1. **Plan détaillé** du chapitre proposé en premier (sections, sous-sections, figures prévues avec noms exacts attendus).
+2. Validation auteur.
+3. Rédaction du `.tex` du chapitre.
+4. Compilation locale via `pdflatex` (MikTeX), rendre compte warnings.
+5. Récap fin de chapitre : liste exacte des images à fournir/télécharger/capturer avec instructions précises (nom de fichier, source, requête Google si web).
+6. Relecture auteur du PDF généré.
+7. Corrections.
+8. Passage au chapitre suivant uniquement après validation.
+
+### Récap des trois rapports d'avancement (lus, à recycler)
+
+Couvrent les Phases 1-5 du PFE (Février → Avril 2026), AVANT l'amorce de l'outil CANECO BT :
+
+- **N°1** (mars 2026) : formation, intégration, premier contact projet
+- **N°2** (15-04-2026) : amorce outil BP VBA, modélisation BIM sprinklage Revit
+- **N°3** (30-04-2026) : outil BP VBA v2 livré, validation contre bilan CEGELEC officiel (596,15 kW Δ=0, 17/20 tableaux conformes), visite chantier HSE + entretiens chef équipe électrique & fluide, instruction métier à mettre à jour
+
+Deux rapports d'avancement supplémentaires (n°4 + n°5) couvriront le développement de l'outil CANECO BT — à rédiger dans le même format.
+
+### Chiffres officiels à utiliser dans le rapport (validés par rapport n°3)
+
+- Outil BP : catalogue **465 équipements / 45 catégories**, **22 tableaux**, **457 circuits**, ≈ **30 procédures VBA**
+- Validation TGBT DACHSER : **596,15 kW** (Δ=0), **476,92 kW foisonnée** (Δ=0), **572,30 kW installée** (Δ=0), **663,33 kVA souscrite**, **calibre 800 kVA**, **réserve 17,08 %**
+- Cohérence : **17 tableaux divisionnaires conformes / 20** ; 3 anomalies documentées (TES1, TES2, TCFA) — convention N&NS à raffiner en v3
+- Outil testé aussi sur **projet NSK** de l'agence
+
+
+
+### État courant (mis à jour à chaque session)
+
+- [x] Phase 1 — Organisation ressources (Ressources_PFE_VINCI créé, ~120 fichiers copiés)
+- [x] Phase 2 — Lecture template HPI thesis.tex (Libertine confirmé)
+- [ ] Phase 3 — Lecture rapports avancement + BP VBA + 1-2 inspiratifs CFA-CFO-BIM
+- [ ] Phase 4 — Recherche web VINCI Energies (logos HD, chiffres 2024-2025, marques)
+- [ ] Phase 5 — Squelette `main.tex` + page de garde + chapitre 1
+- [ ] Phase 6 — Chapitres 2 à 7 (un par session validée)
+- [ ] Phase 7 — Bibliographie, annexes, relecture finale
+
+---
+
 **Fin du CLAUDE.md**
