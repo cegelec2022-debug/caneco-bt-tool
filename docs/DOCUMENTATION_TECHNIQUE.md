@@ -1,7 +1,7 @@
 # Documentation technique — Valorisation des données CANECO BT
 
 **Projet** : caneco-bt-tool
-**Dépôt** : https://github.com/alysquart/caneco-bt-tool (branche stable : `main`)
+**Dépôt d'origine** : https://github.com/alysquart/caneco-bt-tool (branche stable : `main`, figé comme référence — tout repreneur travaille sur son propre fork, voir README section 1)
 **Version documentée** : V1 (état au 12/07/2026)
 **Cadre** : Challenge Innovation VEAO 2026 — Actemium Cegelec Tanger, VINCI Energies
 **Équipe projet** : Aly Aly SANOH (Stagiaire Ingénieur), Mouhcine ZEKRAOUI (Responsable Études Électrique), M. Chakib ABBADI (Chef d'Entreprise)

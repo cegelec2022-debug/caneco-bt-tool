@@ -16,21 +16,20 @@ Cas pilote : projet DACHSER, Lot 3 Électricité. Second projet de validation : 
 
 Le dépôt est hébergé sur GitHub (privé) : `https://github.com/alysquart/caneco-bt-tool`
 
-Pour obtenir l'accès :
+Règle de reprise : le dépôt d'origine (`alysquart/caneco-bt-tool`) est figé comme référence. Toute reprise se fait sur un **fork**, c'est-à-dire votre propre copie du dépôt sur votre compte GitHub : vos modifications restent chez vous et ne touchent jamais le dépôt d'origine.
+
+Procédure :
 
 1. Créer un compte GitHub si nécessaire : https://github.com/signup
-2. Transmettre votre nom d'utilisateur GitHub au propriétaire du dépôt (alysquart), qui vous ajoutera comme collaborateur (Settings > Collaborators > Add people).
-3. Une fois l'invitation acceptée, deux options :
-   - **Cloner** le dépôt pour travailler directement dessus (recommandé pour la continuité du projet) :
-     ```bash
-     git clone https://github.com/alysquart/caneco-bt-tool.git
-     ```
-   - **Forker** le dépôt vers votre propre compte (bouton Fork en haut à droite de la page GitHub) si vous préférez travailler sur votre copie :
-     ```bash
-     git clone https://github.com/<votre-compte>/caneco-bt-tool.git
-     ```
+2. Transmettre votre nom d'utilisateur GitHub au propriétaire du dépôt (alysquart), qui vous ajoutera comme collaborateur en lecture (nécessaire pour voir un dépôt privé et pouvoir le forker).
+3. Une fois l'invitation acceptée, **forker** le dépôt : ouvrir https://github.com/alysquart/caneco-bt-tool, bouton **Fork** en haut à droite, garder le nom `caneco-bt-tool`. La copie est créée sur votre compte.
+4. Cloner **votre fork** (et non le dépôt d'origine) :
+   ```bash
+   git clone https://github.com/<votre-compte>/caneco-bt-tool.git
+   ```
+5. Vérifier que le dépôt distant pointe bien vers votre compte : `git remote -v` doit afficher `<votre-compte>/caneco-bt-tool`, pas `alysquart/caneco-bt-tool`.
 
-La branche `main` contient la dernière version stable du projet.
+Tous vos commits et push iront alors sur votre fork uniquement. Ne poussez jamais vers `alysquart/caneco-bt-tool`. La branche `main` du fork contient la dernière version stable au moment de la reprise.
 
 ---
 

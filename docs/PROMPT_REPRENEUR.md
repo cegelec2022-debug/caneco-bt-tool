@@ -59,11 +59,9 @@ Docker est indispensable. Ne continue pas tant que `docker info` ne répond pas 
 1. Demande à l'utilisateur s'il a un compte GitHub. Sinon, fais-le créer : https://github.com/signup
 2. Le dépôt source est privé : `https://github.com/alysquart/caneco-bt-tool`. Demande à l'utilisateur son nom d'utilisateur GitHub et dis-lui de l'envoyer à Aly Aly SANOH pour être ajouté comme collaborateur (le propriétaire fait : Settings, Collaborators, Add people). Attends qu'il ait accepté l'invitation reçue par e-mail.
 3. Authentifie git sur sa machine : si `gh` est installé, utilise `gh auth login` (GitHub.com, HTTPS, authentifier git, connexion par navigateur). Sinon, le clone HTTPS demandera ses identifiants (un Personal Access Token peut être créé sur https://github.com/settings/tokens si nécessaire ; guide-le).
-4. Propose-lui le choix, avec une phrase d'explication chacun :
-   - **Cloner directement** le dépôt d'origine (recommandé pour continuer le même historique) ;
-   - **Forker** vers son compte (bouton Fork sur la page GitHub, ou `gh repo fork alysquart/caneco-bt-tool --clone`) s'il préfère travailler sur sa propre copie.
-5. Clone dans le dossier courant, puis place-toi sur la branche `main` (dernière version stable).
-6. Lis alors `CLAUDE.md`, `README.md` et `docs/DOCUMENTATION_TECHNIQUE.md` pour charger le contexte complet du projet.
+4. **Règle imposée : travailler sur un fork, jamais sur le dépôt d'origine.** Le dépôt `alysquart/caneco-bt-tool` est la référence figée du développeur initial ; les modifications du repreneur ne doivent jamais y être poussées. Fais forker le dépôt vers son compte : `gh repo fork alysquart/caneco-bt-tool --clone` (ou bouton Fork sur la page GitHub puis clone de son fork). Explique-lui en une phrase que le fork est sa propre copie : tout ce qu'il modifie reste sur son compte.
+5. Après le clone, vérifie avec `git remote -v` que `origin` pointe vers **son** compte et non vers `alysquart/caneco-bt-tool`. Si `gh repo fork --clone` a ajouté un remote `upstream` vers le dépôt d'origine, laisse-le en lecture seule et ne pousse jamais dessus. Place-toi sur la branche `main` (dernière version stable).
+6. Lis alors `CLAUDE.md`, `README.md` et `docs/DOCUMENTATION_TECHNIQUE.md` pour charger le contexte complet du projet. Pour toute la suite de ta collaboration avec cet utilisateur : tous les commits et push vont sur son fork uniquement.
 
 ### Étape 3 — Configuration et lancement
 
@@ -115,7 +113,7 @@ Objectif : une URL publique stable, comme sur l'installation d'origine, pour que
 
 ### État final attendu (checklist de sortie)
 
-- [ ] Dépôt cloné (ou forké) en local, branche `main`
+- [ ] Fork créé sur le compte du repreneur, cloné en local, branche `main` ; `origin` pointe vers son fork et aucun push ne va vers le dépôt d'origine
 - [ ] Fichiers `.env` créés, aucun secret commité
 - [ ] Trois conteneurs Docker en fonctionnement
 - [ ] Connexion réussie sur http://localhost:5173 avec un compte de démonstration
