@@ -301,6 +301,7 @@ caneco-bt-tool/
 - `docs/PROMPT_CLAUDE_CODE.md` : plan de développement initial
 - `docs/SECURITY_AUDIT_PROMPT.md` : procédure d'audit de sécurité avant chaque tag de version
 - `docs/DOCUMENTATION_TECHNIQUE.md` : documentation technique complète (architecture, API, modèles de données, services)
+- `docs/PROMPT_REPRENEUR.md` : installation automatisée de bout en bout pilotée par Claude Code (pour un repreneur non technique : donner ce fichier à Claude Code, qui s'occupe de tout, de l'accès GitHub jusqu'au tunnel ngrok permanent)
 
 ---
 
